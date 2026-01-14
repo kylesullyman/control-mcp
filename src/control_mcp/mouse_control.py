@@ -1,7 +1,10 @@
 """Mouse control functionality using pyautogui."""
 
 import pyautogui
-from typing import Tuple, Optional, Literal
+import base64
+import io
+from typing import Tuple, Optional, Literal, Dict
+from PIL import Image
 
 # Configure pyautogui
 pyautogui.FAILSAFE = True  # Move mouse to corner to abort
@@ -167,3 +170,46 @@ class MouseController:
             pyautogui.moveTo(x, y)
 
         pyautogui.scroll(amount)
+
+    def screenshot(
+        self, region: Optional[Tuple[int, int, int, int]] = None
+    ) -> str:
+        """
+        Take a screenshot of the entire screen or a specific region.
+
+        Args:
+            region: Optional tuple of (x, y, width, height) for a region screenshot.
+                   If None, captures the entire screen.
+
+        Returns:
+            Base64-encoded PNG image as a string
+
+        Raises:
+            ValueError: If region coordinates are invalid
+        """
+        if region is not None:
+            x, y, width, height = region
+            # Validate region bounds
+            if x < 0 or y < 0:
+                raise ValueError("Region x and y must be non-negative")
+            if x + width > self.screen_width or y + height > self.screen_height:
+                raise ValueError(
+                    f"Region ({x}, {y}, {width}, {height}) exceeds screen bounds "
+                    f"(0-{self.screen_width}, 0-{self.screen_height})"
+                )
+            if width <= 0 or height <= 0:
+                raise ValueError("Region width and height must be positive")
+
+            # Capture the specified region
+            image = pyautogui.screenshot(region=(x, y, width, height))
+        else:
+            # Capture the entire screen
+            image = pyautogui.screenshot()
+
+        # Convert image to base64-encoded PNG
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return image_base64

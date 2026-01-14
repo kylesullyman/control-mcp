@@ -2,11 +2,11 @@
 
 import asyncio
 import sys
-from typing import Optional
+from typing import Optional, Union
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ImageContent
 
 from .mouse_control import MouseController
 
@@ -161,10 +161,27 @@ class MouseControlServer:
                         "required": [],
                     },
                 ),
+                Tool(
+                    name="screenshot",
+                    description="Take a screenshot of the entire screen or a specific region",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "region": {
+                                "type": "array",
+                                "minItems": 4,
+                                "maxItems": 4,
+                                "items": {"type": "number"},
+                                "description": "Optional region to capture as [x, y, width, height]",
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+        async def call_tool(name: str, arguments: dict) -> list[Union[TextContent, ImageContent]]:
             """Handle tool calls."""
             try:
                 if name == "get_cursor_position":
@@ -245,6 +262,26 @@ class MouseControlServer:
                             type="text",
                             text=f"Screen size: width={width}, height={height}",
                         )
+                    ]
+
+                elif name == "screenshot":
+                    region = None
+                    if "region" in arguments:
+                        region_list = arguments["region"]
+                        region = tuple(int(v) for v in region_list)
+
+                    image_base64 = self.mouse.screenshot(region)
+                    region_str = f"region {region}" if region else "entire screen"
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Screenshot of {region_str}:",
+                        ),
+                        ImageContent(
+                            type="image",
+                            data=image_base64,
+                            mimeType="image/png",
+                        ),
                     ]
 
                 else:

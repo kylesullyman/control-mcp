@@ -1,6 +1,6 @@
 # Control MCP - Mouse Control Server
 
-A Model Context Protocol (MCP) server that provides low-level mouse control capabilities on macOS. This server allows you to control the cursor position, perform clicks, drag operations, and scroll using Python's pyautogui library.
+A Model Context Protocol (MCP) server that provides low-level mouse control capabilities on macOS. This server allows you to control the cursor position, perform clicks, drag operations, scroll, and take screenshots using Python's pyautogui library.
 
 ## Features
 
@@ -10,6 +10,7 @@ A Model Context Protocol (MCP) server that provides low-level mouse control capa
 - **Drag**: Drag from one position to another
 - **Scroll**: Scroll up or down at any position
 - **Get Screen Size**: Get screen dimensions
+- **Screenshot**: Capture the entire screen or a specific region as a PNG image
 
 ## Installation
 
@@ -129,6 +130,25 @@ Get the screen dimensions.
 What is my screen size?
 ```
 
+### 7. screenshot
+Capture the entire screen or a specific region as a PNG image.
+
+**Parameters**:
+- `region` (array, optional): Region to capture as `[x, y, width, height]`
+  - `x`: X coordinate of the top-left corner
+  - `y`: Y coordinate of the top-left corner
+  - `width`: Width of the region in pixels
+  - `height`: Height of the region in pixels
+  - If not provided, captures the entire screen
+
+**Examples**:
+```
+Take a screenshot of the entire screen
+Take a screenshot of the region starting at (100, 100) with width 800 and height 600
+```
+
+**Returns**: A PNG image in base64 format that Claude can display
+
 ## Safety Features
 
 - **FAILSAFE**: Move mouse to any corner of the screen to abort operations
@@ -163,6 +183,16 @@ Once configured in Claude Desktop, you can ask Claude to control your mouse:
 5. **Scroll in a specific area**:
    ```
    Move to x=800, y=400 and scroll down 5 clicks
+   ```
+
+6. **Take a screenshot**:
+   ```
+   Take a screenshot so I can see what's currently on my screen
+   ```
+
+7. **Capture a region**:
+   ```
+   Take a screenshot of the region from x=0, y=0, width=1024, height=768
    ```
 
 ## Troubleshooting
@@ -215,6 +245,14 @@ mouse.move_cursor(500, 300)
 
 # Click
 mouse.click(100, 200)
+
+# Take a screenshot
+image_base64 = mouse.screenshot()
+print(f"Screenshot taken, {len(image_base64)} bytes")
+
+# Screenshot a specific region
+region_image = mouse.screenshot(region=(100, 100, 800, 600))
+print(f"Region screenshot taken")
 ```
 
 ## License
