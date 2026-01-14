@@ -142,6 +142,28 @@ screen = get_screen_size()
 4. Verify permission handling
 5. Test edge cases (coordinates outside screen bounds)
 
+## Development Workflow
+
+### Version Control
+Before making any changes to the codebase:
+1. **Check git status**: `git status` - See current changes
+2. **Review changes**: `git diff` - Review what's been modified
+3. **Commit changes**: Create meaningful commits for each feature or fix
+   ```bash
+   git commit -m "Descriptive message about the change"
+   ```
+4. **Use git branches**: For new features, create a branch
+   ```bash
+   git checkout -b feature/feature-name
+   ```
+5. **Keep commits atomic**: Each commit should represent a single logical change
+
+### Making Changes
+- Always commit before making significant changes
+- Write clear commit messages that explain the "why" not just the "what"
+- Test changes locally before committing
+- Push to remote regularly to avoid losing work
+
 ## Next Steps
 1. Set up Python project structure with pyproject.toml
 2. Install MCP SDK and mouse control library

@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/control_mcp/__init__.py
+src/control_mcp/mouse_control.py
+src/control_mcp/server.py
+src/control_mcp.egg-info/PKG-INFO
+src/control_mcp.egg-info/SOURCES.txt
+src/control_mcp.egg-info/dependency_links.txt
+src/control_mcp.egg-info/entry_points.txt
+src/control_mcp.egg-info/requires.txt
+src/control_mcp.egg-info/top_level.txt

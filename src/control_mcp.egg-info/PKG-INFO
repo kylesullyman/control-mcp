@@ -1,3 +1,16 @@
+Metadata-Version: 2.4
+Name: control-mcp
+Version: 0.1.0
+Summary: MCP server for low-level mouse control on macOS
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: pyautogui>=0.9.54
+Requires-Dist: pillow>=10.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+
 # Control MCP - Mouse Control Server
 
 A Model Context Protocol (MCP) server that provides low-level mouse control capabilities on macOS. This server allows you to control the cursor position, perform clicks, drag operations, scroll, and take screenshots using Python's pyautogui library.
@@ -35,11 +48,12 @@ Add this MCP server to your Claude Desktop configuration file:
 {
   "mcpServers": {
     "control-mcp": {
-      "command": "python3",
+      "command": "python",
       "args": [
         "-m",
         "control_mcp.server"
-      ]
+      ],
+      "cwd": "/Users/kylesullivan/Documents/coding_projects/control-mcp/src"
     }
   }
 }
