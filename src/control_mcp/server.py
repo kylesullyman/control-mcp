@@ -29,7 +29,7 @@ class MouseControlServer:
             return [
                 Tool(
                     name="get_cursor_position",
-                    description="Get the current cursor position on screen",
+                    description="Get the current mouse cursor position on the user's screen. Use this when the user asks where their mouse is, wants to know cursor coordinates, or before performing click operations to understand current position.",
                     inputSchema={
                         "type": "object",
                         "properties": {},
@@ -38,21 +38,21 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="move_cursor",
-                    description="Move the cursor to specified screen coordinates",
+                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. Supports smooth animated movement with duration parameter.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate (pixels from left)",
+                                "description": "X coordinate (pixels from left edge of screen)",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate (pixels from top)",
+                                "description": "Y coordinate (pixels from top edge of screen)",
                             },
                             "duration": {
                                 "type": "number",
-                                "description": "Duration of movement in seconds (0 for instant)",
+                                "description": "Duration of movement in seconds (0 for instant, use 0.5-1.0 for visible smooth movement)",
                                 "default": 0.0,
                             },
                         },
@@ -61,27 +61,27 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="click",
-                    description="Perform mouse click at current position or specified coordinates",
+                    description="Perform mouse click to interact with UI elements like buttons, links, menus, icons, checkboxes, or any clickable element. Supports left/right/middle click, double-click, and clicking at specific coordinates or current cursor position.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate (optional, uses current position if not provided)",
+                                "description": "X coordinate to click at (optional, uses current cursor position if not provided)",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate (optional, uses current position if not provided)",
+                                "description": "Y coordinate to click at (optional, uses current cursor position if not provided)",
                             },
                             "button": {
                                 "type": "string",
                                 "enum": ["left", "right", "middle"],
-                                "description": "Mouse button to click",
+                                "description": "Mouse button to click (left for normal click, right for context menu)",
                                 "default": "left",
                             },
                             "clicks": {
                                 "type": "number",
-                                "description": "Number of clicks (for double-click, use 2)",
+                                "description": "Number of clicks (use 2 for double-click to open files/apps)",
                                 "default": 1,
                             },
                             "interval": {
@@ -95,7 +95,7 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="drag",
-                    description="Drag from one position to another",
+                    description="Drag from one position to another. Use for moving files, selecting text, resizing windows, drawing, or any drag-and-drop operation on the user's screen.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -117,7 +117,7 @@ class MouseControlServer:
                             },
                             "duration": {
                                 "type": "number",
-                                "description": "Duration of drag in seconds",
+                                "description": "Duration of drag in seconds (use 0.5-1.0 for smooth visible drag)",
                                 "default": 0.5,
                             },
                             "button": {
@@ -132,21 +132,21 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="scroll",
-                    description="Scroll at current or specified cursor position",
+                    description="Scroll up or down on a page or within an application. Use for scrolling through documents, web pages, lists, or any scrollable content on the user's screen.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "amount": {
                                 "type": "number",
-                                "description": "Scroll amount (positive = up, negative = down)",
+                                "description": "Scroll amount (positive = scroll up, negative = scroll down). Typical values: 3-5 for small scroll, 10+ for larger scroll",
                             },
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate to scroll at (optional, uses current position if not provided)",
+                                "description": "X coordinate to scroll at (optional, scrolls at current cursor position if not provided)",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate to scroll at (optional, uses current position if not provided)",
+                                "description": "Y coordinate to scroll at (optional, scrolls at current cursor position if not provided)",
                             },
                         },
                         "required": ["amount"],
@@ -154,7 +154,7 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="get_screen_size",
-                    description="Get the screen dimensions (width and height)",
+                    description="Get the user's screen dimensions (width and height in pixels). Use this to understand screen bounds before moving cursor or to calculate positions relative to screen size.",
                     inputSchema={
                         "type": "object",
                         "properties": {},
@@ -163,7 +163,7 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="screenshot",
-                    description="Take a screenshot of the entire screen or a specific region",
+                    description="Take a screenshot to see what's currently on the user's screen. Use this to see the current state of the desktop, find UI elements, verify actions completed successfully, or help the user with anything visual on their screen. Can capture full screen or a specific region.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -172,7 +172,7 @@ class MouseControlServer:
                                 "minItems": 4,
                                 "maxItems": 4,
                                 "items": {"type": "number"},
-                                "description": "Optional region to capture as [x, y, width, height]",
+                                "description": "Optional region to capture as [x, y, width, height]. Omit to capture entire screen.",
                             },
                         },
                         "required": [],

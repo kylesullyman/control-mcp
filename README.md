@@ -155,43 +155,72 @@ Take a screenshot of the region starting at (100, 100) with width 800 and height
 - **Error Handling**: Clear error messages for invalid inputs
 - **Pause Between Actions**: Small delay (0.1s) between operations to prevent issues
 
+## How Claude Decides to Use These Tools
+
+Claude automatically chooses to use these tools based on your request. The tool descriptions contain keywords that help Claude recognize when to use them. Here are phrases that will trigger Claude to use the mouse control tools:
+
+### Trigger Phrases (Claude will recognize these)
+
+| What You Say | Tools Claude Will Use |
+|--------------|----------------------|
+| "Click on the button" | `screenshot` → `click` |
+| "Show me what's on my screen" | `screenshot` |
+| "Where is my mouse?" | `get_cursor_position` |
+| "Move the cursor to..." | `move_cursor` |
+| "Scroll down the page" | `scroll` |
+| "Drag this file to..." | `drag` |
+| "Open that app" (with screenshot) | `screenshot` → `move_cursor` → `click` (double) |
+| "What's my screen resolution?" | `get_screen_size` |
+
+### Tips for Better Results
+
+1. **Ask Claude to look first**: "Take a screenshot and click the Settings button"
+2. **Be specific about actions**: "Double-click" vs "click", "right-click" for context menus
+3. **Reference UI elements**: "Click the blue Submit button" helps Claude find it in screenshots
+4. **Chain actions**: "Take a screenshot, find the search box, and click on it"
+
 ## Usage Examples
 
 Once configured in Claude Desktop, you can ask Claude to control your mouse:
 
-1. **Find cursor position**:
+1. **See your screen**:
+   ```
+   Take a screenshot and tell me what apps are open
+   ```
+
+2. **Click on something**:
+   ```
+   Take a screenshot and click on the Safari icon in the dock
+   ```
+
+3. **Find cursor position**:
    ```
    Where is my mouse cursor right now?
    ```
 
-2. **Move and click**:
+4. **Move and click**:
    ```
    Move the cursor to x=200, y=300 and click
    ```
 
-3. **Double-click something**:
+5. **Double-click to open**:
    ```
    Double-click at position x=150, y=250
    ```
 
-4. **Drag operation**:
+6. **Drag operation**:
    ```
    Drag from (100, 100) to (500, 500)
    ```
 
-5. **Scroll in a specific area**:
+7. **Scroll a page**:
    ```
-   Move to x=800, y=400 and scroll down 5 clicks
-   ```
-
-6. **Take a screenshot**:
-   ```
-   Take a screenshot so I can see what's currently on my screen
+   Scroll down 10 clicks on the current page
    ```
 
-7. **Capture a region**:
+8. **Complex task**:
    ```
-   Take a screenshot of the region from x=0, y=0, width=1024, height=768
+   Take a screenshot, find the Chrome browser, and open it
    ```
 
 ## Troubleshooting
