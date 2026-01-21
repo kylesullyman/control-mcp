@@ -5,7 +5,8 @@ import base64
 import io
 import time
 import random
-from typing import Tuple, Optional, Literal, List
+from typing import Tuple, Optional, Literal, List, Dict, Any
+from PIL import Image, ImageDraw, ImageFont
 
 # Configure pyautogui
 pyautogui.FAILSAFE = True  # Move mouse to corner to abort
@@ -378,6 +379,249 @@ class MouseController:
         image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
         return image_base64
+
+    def screenshot_with_grid(
+        self, rows: int = 10, cols: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Take a screenshot with a labeled grid overlay for precise targeting.
+
+        The grid uses alphanumeric labels: columns are A-Z (then AA, AB...),
+        rows are 1-based numbers. Cell "A1" is top-left.
+
+        Args:
+            rows: Number of rows in the grid (default: 10)
+            cols: Number of columns in the grid (default: 10)
+
+        Returns:
+            Dictionary containing:
+                - image: Base64-encoded PNG with grid overlay
+                - rows: Number of rows
+                - cols: Number of columns
+                - cell_width: Width of each cell in pixels
+                - cell_height: Height of each cell in pixels
+                - screen_width: Total screen width
+                - screen_height: Total screen height
+        """
+        # Refresh screen size
+        self._refresh_screen_size()
+
+        # Take screenshot
+        image = pyautogui.screenshot()
+        draw = ImageDraw.Draw(image)
+
+        # Calculate cell dimensions
+        cell_width = self.screen_width / cols
+        cell_height = self.screen_height / rows
+
+        # Grid line color and label color
+        grid_color = (255, 0, 0, 200)  # Red with some transparency
+        label_color = (255, 255, 0)  # Yellow for labels
+        label_bg_color = (0, 0, 0, 180)  # Semi-transparent black background
+
+        # Try to use a reasonable font size based on cell dimensions
+        font_size = max(10, min(int(cell_height / 4), int(cell_width / 4), 24))
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+        except Exception:
+            font = ImageFont.load_default()
+
+        # Draw vertical lines and column labels
+        for col in range(cols + 1):
+            x = int(col * cell_width)
+            draw.line([(x, 0), (x, self.screen_height)], fill=grid_color, width=2)
+
+        # Draw horizontal lines and row labels
+        for row in range(rows + 1):
+            y = int(row * cell_height)
+            draw.line([(0, y), (self.screen_width, y)], fill=grid_color, width=2)
+
+        # Draw cell labels at the center of each cell
+        for row in range(rows):
+            for col in range(cols):
+                label = self._get_grid_label(row, col)
+
+                # Calculate label position (center of cell)
+                label_x = int(col * cell_width + cell_width / 2)
+                label_y = int(row * cell_height + cell_height / 2)
+
+                # Get text bounding box for centering
+                bbox = draw.textbbox((0, 0), label, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+
+                # Center the label
+                text_x = label_x - text_width // 2
+                text_y = label_y - text_height // 2
+
+                # Draw background rectangle for readability
+                padding = 2
+                draw.rectangle(
+                    [
+                        text_x - padding,
+                        text_y - padding,
+                        text_x + text_width + padding,
+                        text_y + text_height + padding,
+                    ],
+                    fill=label_bg_color,
+                )
+
+                # Draw the label
+                draw.text((text_x, text_y), label, fill=label_color, font=font)
+
+        # Convert image to base64-encoded PNG
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return {
+            "image": image_base64,
+            "rows": rows,
+            "cols": cols,
+            "cell_width": cell_width,
+            "cell_height": cell_height,
+            "screen_width": self.screen_width,
+            "screen_height": self.screen_height,
+        }
+
+    def _get_grid_label(self, row: int, col: int) -> str:
+        """
+        Generate a grid cell label from row and column indices.
+
+        Args:
+            row: 0-indexed row number
+            col: 0-indexed column number
+
+        Returns:
+            Label string like "A1", "B2", "AA10", etc.
+        """
+        # Generate column label (A-Z, then AA, AB, etc.)
+        col_label = ""
+        col_num = col
+        while col_num >= 0:
+            col_label = chr(ord('A') + (col_num % 26)) + col_label
+            col_num = col_num // 26 - 1
+
+        # Row is 1-indexed for display
+        row_label = str(row + 1)
+
+        return col_label + row_label
+
+    def _parse_grid_label(self, label: str) -> Tuple[int, int]:
+        """
+        Parse a grid label into row and column indices.
+
+        Args:
+            label: Grid cell label like "A1", "B2", "AA10"
+
+        Returns:
+            Tuple of (row_index, col_index), both 0-indexed
+
+        Raises:
+            ValueError: If label format is invalid
+        """
+        label = label.upper().strip()
+
+        # Find where letters end and numbers begin
+        col_part = ""
+        row_part = ""
+
+        for char in label:
+            if char.isalpha():
+                if row_part:
+                    raise ValueError(f"Invalid grid label format: {label}")
+                col_part += char
+            elif char.isdigit():
+                row_part += char
+            else:
+                raise ValueError(f"Invalid character in grid label: {char}")
+
+        if not col_part or not row_part:
+            raise ValueError(f"Invalid grid label format: {label}")
+
+        # Convert column letters to index (A=0, B=1, ..., Z=25, AA=26, etc.)
+        col_index = 0
+        for char in col_part:
+            col_index = col_index * 26 + (ord(char) - ord('A') + 1)
+        col_index -= 1  # Convert to 0-indexed
+
+        # Convert row number to index (1-indexed to 0-indexed)
+        row_index = int(row_part) - 1
+
+        return (row_index, col_index)
+
+    def get_grid_cell_center(
+        self, label: str, rows: int = 10, cols: int = 10
+    ) -> Tuple[int, int]:
+        """
+        Get the center pixel coordinates of a grid cell.
+
+        Args:
+            label: Grid cell label like "A1", "B2"
+            rows: Total number of rows in the grid
+            cols: Total number of columns in the grid
+
+        Returns:
+            Tuple of (x, y) pixel coordinates at center of cell
+
+        Raises:
+            ValueError: If label is invalid or out of grid bounds
+        """
+        self._refresh_screen_size()
+
+        row_index, col_index = self._parse_grid_label(label)
+
+        # Validate bounds
+        if row_index < 0 or row_index >= rows:
+            raise ValueError(
+                f"Row index {row_index + 1} out of bounds (1-{rows})"
+            )
+        if col_index < 0 or col_index >= cols:
+            max_col_label = self._get_grid_label(0, cols - 1).rstrip('1')
+            raise ValueError(
+                f"Column index out of bounds (A-{max_col_label})"
+            )
+
+        # Calculate cell dimensions
+        cell_width = self.screen_width / cols
+        cell_height = self.screen_height / rows
+
+        # Calculate center of cell
+        center_x = int(col_index * cell_width + cell_width / 2)
+        center_y = int(row_index * cell_height + cell_height / 2)
+
+        return (center_x, center_y)
+
+    def click_grid_cell(
+        self,
+        label: str,
+        rows: int = 10,
+        cols: int = 10,
+        button: Literal["left", "right", "middle"] = "left",
+        clicks: int = 1,
+        interval: float = 0.1,
+    ) -> Tuple[int, int]:
+        """
+        Click at the center of a grid cell.
+
+        Args:
+            label: Grid cell label like "A1", "B2"
+            rows: Total number of rows in the grid
+            cols: Total number of columns in the grid
+            button: Mouse button to click
+            clicks: Number of clicks
+            interval: Time between clicks
+
+        Returns:
+            Tuple of (x, y) coordinates where click occurred
+
+        Raises:
+            ValueError: If label is invalid or out of bounds
+        """
+        x, y = self.get_grid_cell_center(label, rows, cols)
+        self.click(x, y, button, clicks, interval)
+        return (x, y)
 
     def keyboard_shortcut(self, *keys: str) -> None:
         """

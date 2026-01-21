@@ -248,6 +248,66 @@ class MouseControlServer:
                         "required": ["app_name"],
                     },
                 ),
+                Tool(
+                    name="screenshot_with_grid",
+                    description="Take a screenshot with a labeled grid overlay for precise targeting. The screen is divided into a grid (default 10x10) with cells labeled like a spreadsheet: columns A-Z (then AA, AB...), rows 1-N. Cell 'A1' is top-left. Use this BEFORE clicking when you need precise positioning - examine the grid to find which cell contains your target, then use click_grid_cell.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "rows": {
+                                "type": "number",
+                                "description": "Number of rows in the grid (default: 10). More rows = smaller cells = more precision.",
+                                "default": 10,
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Number of columns in the grid (default: 10). More columns = smaller cells = more precision.",
+                                "default": 10,
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="click_grid_cell",
+                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'C5'). Use screenshot_with_grid first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot_with_grid.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "type": "string",
+                                "description": "Grid cell label to click (e.g., 'A1', 'B3', 'C5'). Column letters + row number.",
+                            },
+                            "rows": {
+                                "type": "number",
+                                "description": "Number of rows in the grid (must match screenshot_with_grid)",
+                                "default": 10,
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Number of columns in the grid (must match screenshot_with_grid)",
+                                "default": 10,
+                            },
+                            "button": {
+                                "type": "string",
+                                "enum": ["left", "right", "middle"],
+                                "description": "Mouse button to click",
+                                "default": "left",
+                            },
+                            "clicks": {
+                                "type": "number",
+                                "description": "Number of clicks (use 2 for double-click)",
+                                "default": 1,
+                            },
+                            "interval": {
+                                "type": "number",
+                                "description": "Time between clicks in seconds",
+                                "default": 0.1,
+                            },
+                        },
+                        "required": ["label"],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -399,6 +459,49 @@ class MouseControlServer:
                         TextContent(
                             type="text",
                             text=f"Opened Spotlight and searched for: {app_name}",
+                        )
+                    ]
+
+                elif name == "screenshot_with_grid":
+                    rows = int(arguments.get("rows", 10))
+                    cols = int(arguments.get("cols", 10))
+                    result = self.mouse.screenshot_with_grid(rows, cols)
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Screenshot with {rows}x{cols} grid overlay. "
+                                f"Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels. "
+                                f"Labels: columns A-{chr(ord('A') + min(cols - 1, 25))}{'...' if cols > 26 else ''}, rows 1-{rows}. "
+                                f"Use click_grid_cell with a label like 'A1', 'B3', etc. to click a cell."
+                            ),
+                        ),
+                        ImageContent(
+                            type="image",
+                            data=result["image"],
+                            mimeType="image/png",
+                        ),
+                    ]
+
+                elif name == "click_grid_cell":
+                    label = arguments["label"]
+                    rows = int(arguments.get("rows", 10))
+                    cols = int(arguments.get("cols", 10))
+                    button = arguments.get("button", "left")
+                    clicks = int(arguments.get("clicks", 1))
+                    interval = float(arguments.get("interval", 0.1))
+
+                    x, y = self.mouse.click_grid_cell(
+                        label, rows, cols, button, clicks, interval
+                    )
+                    click_type = "double-click" if clicks == 2 else f"{clicks} click(s)"
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Clicked grid cell {label.upper()} at pixel coordinates ({x}, {y}) "
+                                f"with {button} button ({click_type})"
+                            ),
                         )
                     ]
 
