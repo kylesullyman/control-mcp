@@ -38,7 +38,7 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="move_cursor",
-                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. Supports smooth animated movement with duration parameter.",
+                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. All movements are smooth and animated over 0.3 seconds by default.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -52,8 +52,8 @@ class MouseControlServer:
                             },
                             "duration": {
                                 "type": "number",
-                                "description": "Duration of movement in seconds (0 for instant, use 0.5-1.0 for visible smooth movement)",
-                                "default": 0.0,
+                                "description": "Duration of movement in seconds (default: 0.3 for smooth movement)",
+                                "default": 0.3,
                             },
                         },
                         "required": ["x", "y"],
@@ -163,19 +163,88 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="screenshot",
-                    description="Take a screenshot to see what's currently on the user's screen. Use this to see the current state of the desktop, find UI elements, verify actions completed successfully, or help the user with anything visual on their screen. Can capture full screen or a specific region.",
+                    description="Take a full screen screenshot to see what's currently on the user's screen. Use this to see the current state of the desktop, find UI elements, verify actions completed successfully, or help the user with anything visual on their screen.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="keyboard_shortcut",
+                    description="Send a keyboard shortcut (hotkey combination) like Cmd+C, Cmd+V, Cmd+Tab. Use this to copy, paste, switch apps, save files, undo/redo, or any keyboard shortcut the user would type. On macOS, use 'command' for Cmd key, 'option' for Option/Alt, 'control' for Control, 'shift' for Shift.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "region": {
+                            "keys": {
                                 "type": "array",
-                                "minItems": 4,
-                                "maxItems": 4,
-                                "items": {"type": "number"},
-                                "description": "Optional region to capture as [x, y, width, height]. Omit to capture entire screen.",
+                                "items": {"type": "string"},
+                                "description": "List of keys to press together. Examples: ['command', 'c'] for copy, ['command', 'v'] for paste, ['command', 'tab'] to switch apps, ['command', 'shift', '4'] for screenshot selection",
                             },
                         },
-                        "required": [],
+                        "required": ["keys"],
+                    },
+                ),
+                Tool(
+                    name="key_press",
+                    description="Press a single key one or more times. Use for pressing Enter, Escape, Tab, arrow keys, function keys, or typing individual characters. Good for navigating dialogs, confirming actions, or pressing special keys.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "key": {
+                                "type": "string",
+                                "description": "The key to press. Examples: 'enter', 'escape', 'tab', 'space', 'backspace', 'delete', 'up', 'down', 'left', 'right', 'f1'-'f12', or single characters like 'a', 'b', '1'",
+                            },
+                            "presses": {
+                                "type": "number",
+                                "description": "Number of times to press the key (default: 1)",
+                                "default": 1,
+                            },
+                            "interval": {
+                                "type": "number",
+                                "description": "Time between presses in seconds (default: 0.1)",
+                                "default": 0.1,
+                            },
+                        },
+                        "required": ["key"],
+                    },
+                ),
+                Tool(
+                    name="type_text",
+                    description="Type text character by character, simulating keyboard typing. Use for entering text into text fields, search boxes, forms, or anywhere text input is needed. For special characters or non-ASCII text, consider using clipboard paste instead.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "The text to type",
+                            },
+                            "interval": {
+                                "type": "number",
+                                "description": "Time between keystrokes in seconds (default: 0.05)",
+                                "default": 0.05,
+                            },
+                        },
+                        "required": ["text"],
+                    },
+                ),
+                Tool(
+                    name="open_app",
+                    description="Open an application on macOS using Spotlight search (Command+Space). Use this to launch any application by name - just provide the app name like 'Safari', 'Terminal', 'Finder', 'Chrome', etc. This is the fastest way to open apps without needing to know their location.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "app_name": {
+                                "type": "string",
+                                "description": "The name of the application to open (e.g., 'Safari', 'Terminal', 'Visual Studio Code')",
+                            },
+                            "delay": {
+                                "type": "number",
+                                "description": "Time to wait for Spotlight to appear before typing (default: 0.5 seconds)",
+                                "default": 0.5,
+                            },
+                        },
+                        "required": ["app_name"],
                     },
                 ),
             ]
@@ -196,8 +265,12 @@ class MouseControlServer:
                 elif name == "move_cursor":
                     x = int(arguments["x"])
                     y = int(arguments["y"])
-                    duration = float(arguments.get("duration", 0.0))
-                    self.mouse.move_cursor(x, y, duration)
+                    # Only pass duration if explicitly provided, otherwise use default (0.3s)
+                    if "duration" in arguments:
+                        duration = float(arguments["duration"])
+                        self.mouse.move_cursor(x, y, duration)
+                    else:
+                        self.mouse.move_cursor(x, y)
                     return [
                         TextContent(
                             type="text",
@@ -265,23 +338,67 @@ class MouseControlServer:
                     ]
 
                 elif name == "screenshot":
-                    region = None
-                    if "region" in arguments:
-                        region_list = arguments["region"]
-                        region = tuple(int(v) for v in region_list)
-
-                    image_base64 = self.mouse.screenshot(region)
-                    region_str = f"region {region}" if region else "entire screen"
+                    image_base64 = self.mouse.screenshot()
                     return [
                         TextContent(
                             type="text",
-                            text=f"Screenshot of {region_str}:",
+                            text="Full screen screenshot:",
                         ),
                         ImageContent(
                             type="image",
                             data=image_base64,
                             mimeType="image/png",
                         ),
+                    ]
+
+                elif name == "keyboard_shortcut":
+                    keys = arguments["keys"]
+                    if not keys or not isinstance(keys, list):
+                        raise ValueError("keys must be a non-empty list of key names")
+                    self.mouse.keyboard_shortcut(*keys)
+                    keys_str = "+".join(keys)
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Pressed keyboard shortcut: {keys_str}",
+                        )
+                    ]
+
+                elif name == "key_press":
+                    key = arguments["key"]
+                    presses = int(arguments.get("presses", 1))
+                    interval = float(arguments.get("interval", 0.1))
+                    self.mouse.key_press(key, presses, interval)
+                    press_str = f"{presses} time(s)" if presses > 1 else ""
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Pressed key: {key} {press_str}".strip(),
+                        )
+                    ]
+
+                elif name == "type_text":
+                    text = arguments["text"]
+                    interval = float(arguments.get("interval", 0.05))
+                    self.mouse.type_text(text, interval)
+                    # Truncate displayed text if too long
+                    display_text = text if len(text) <= 50 else text[:47] + "..."
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Typed text: {display_text}",
+                        )
+                    ]
+
+                elif name == "open_app":
+                    app_name = arguments["app_name"]
+                    delay = float(arguments.get("delay", 0.5))
+                    self.mouse.open_app(app_name, delay)
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Opened Spotlight and searched for: {app_name}",
+                        )
                     ]
 
                 else:
