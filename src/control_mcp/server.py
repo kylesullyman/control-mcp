@@ -210,19 +210,17 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="screenshot",
-                    description="Take a screenshot with a labeled grid overlay. This is the PRIMARY tool for seeing the screen - ALWAYS use this before clicking. The screen is divided into a grid (default 12x12) with cells labeled like a spreadsheet: columns A-Z, rows 1-N. Cell 'A1' is top-left. After examining the grid, use click_grid_cell to click the cell containing your target element.",
+                    description="Take a screenshot with a labeled grid overlay. This is the PRIMARY tool for seeing the screen - ALWAYS use this before clicking. The screen is divided into a fine grid (default: rows=screen_height/2, cols=screen_width/2, creating ~2x2 pixel cells). Cells are labeled like a spreadsheet: columns A-Z (then AA, AB...), rows 1-N. Cell 'A1' is top-left. After examining the grid, use click_grid_cell to click the cell containing your target element.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (default: 12). More rows = smaller cells = more precision.",
-                                "default": 12,
+                                "description": "Number of rows in the grid. Default is screen_height/2 for ~2px tall cells.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (default: 12). More columns = smaller cells = more precision.",
-                                "default": 12,
+                                "description": "Number of columns in the grid. Default is screen_width/2 for ~2px wide cells.",
                             },
                         },
                         "required": [],
@@ -314,13 +312,11 @@ After identifying the cell, respond with which cell to click and why."""
                         "properties": {
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (default: 12).",
-                                "default": 12,
+                                "description": "Number of rows in the grid. Default is screen_height/2.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (default: 12).",
-                                "default": 12,
+                                "description": "Number of columns in the grid. Default is screen_width/2.",
                             },
                         },
                         "required": [],
@@ -328,23 +324,21 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="click_grid_cell",
-                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'C5'). Use screenshot first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot.",
+                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'ZZ500'). Use screenshot first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "label": {
                                 "type": "string",
-                                "description": "Grid cell label to click (e.g., 'A1', 'B3', 'C5'). Column letters + row number.",
+                                "description": "Grid cell label to click (e.g., 'A1', 'B3', 'AA100'). Column letters + row number.",
                             },
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (must match screenshot)",
-                                "default": 12,
+                                "description": "Number of rows in the grid (must match screenshot). Default is screen_height/2.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (must match screenshot)",
-                                "default": 12,
+                                "description": "Number of columns in the grid (must match screenshot). Default is screen_width/2.",
                             },
                             "button": {
                                 "type": "string",
@@ -378,13 +372,11 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "rows": {
                                 "type": "number",
-                                "description": "Grid rows for precision (default: 12, use 20+ for small targets)",
-                                "default": 12,
+                                "description": "Grid rows for precision. Default is screen_height/2.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Grid columns for precision (default: 12, use 20+ for small targets)",
-                                "default": 12,
+                                "description": "Grid columns for precision. Default is screen_width/2.",
                             },
                         },
                         "required": ["target"],
@@ -402,13 +394,11 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "parent_rows": {
                                 "type": "number",
-                                "description": "Rows in the parent grid (must match previous screenshot)",
-                                "default": 12,
+                                "description": "Rows in the parent grid (must match previous screenshot). Default is screen_height/2.",
                             },
                             "parent_cols": {
                                 "type": "number",
-                                "description": "Columns in the parent grid (must match previous screenshot)",
-                                "default": 12,
+                                "description": "Columns in the parent grid (must match previous screenshot). Default is screen_width/2.",
                             },
                             "sub_rows": {
                                 "type": "number",
@@ -440,13 +430,11 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "parent_rows": {
                                 "type": "number",
-                                "description": "Rows in the parent grid",
-                                "default": 12,
+                                "description": "Rows in the parent grid. Default is screen_height/2.",
                             },
                             "parent_cols": {
                                 "type": "number",
-                                "description": "Columns in the parent grid",
-                                "default": 12,
+                                "description": "Columns in the parent grid. Default is screen_width/2.",
                             },
                             "sub_rows": {
                                 "type": "number",
@@ -582,8 +570,11 @@ After identifying the cell, respond with which cell to click and why."""
                     ]
 
                 elif name == "screenshot":
-                    rows = int(arguments.get("rows", 12))
-                    cols = int(arguments.get("cols", 12))
+                    # Default to half screen dimensions for ~2x2 pixel cells
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
                     result = self.mouse.screenshot_with_grid(rows, cols)
                     log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
                     return [
@@ -660,8 +651,10 @@ After identifying the cell, respond with which cell to click and why."""
 
                 elif name == "screenshot_with_grid":
                     # Deprecated: redirects to screenshot behavior
-                    rows = int(arguments.get("rows", 12))
-                    cols = int(arguments.get("cols", 12))
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
                     result = self.mouse.screenshot_with_grid(rows, cols)
                     log(f"  Grid screenshot (legacy): {rows}x{cols}", "INFO")
                     return [
@@ -683,8 +676,10 @@ After identifying the cell, respond with which cell to click and why."""
 
                 elif name == "click_grid_cell":
                     label = arguments["label"]
-                    rows = int(arguments.get("rows", 12))
-                    cols = int(arguments.get("cols", 12))
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
                     button = arguments.get("button", "left")
                     clicks = int(arguments.get("clicks", 1))
                     interval = float(arguments.get("interval", 0.1))
@@ -706,8 +701,10 @@ After identifying the cell, respond with which cell to click and why."""
 
                 elif name == "locate_and_click":
                     target = arguments["target"]
-                    rows = int(arguments.get("rows", 12))
-                    cols = int(arguments.get("cols", 12))
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
                     result = self.mouse.screenshot_with_grid(rows, cols)
                     log(f"  Locate target: '{target}' ({rows}x{cols} grid)", "TOOL")
 
@@ -728,8 +725,10 @@ After identifying the cell, respond with which cell to click and why."""
 
                 elif name == "refine_target":
                     cell = arguments["cell"]
-                    parent_rows = int(arguments.get("parent_rows", 12))
-                    parent_cols = int(arguments.get("parent_cols", 12))
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    parent_rows = int(arguments.get("parent_rows", default_rows))
+                    parent_cols = int(arguments.get("parent_cols", default_cols))
                     sub_rows = int(arguments.get("sub_rows", 5))
                     sub_cols = int(arguments.get("sub_cols", 5))
 
@@ -759,8 +758,10 @@ After identifying the cell, respond with which cell to click and why."""
                 elif name == "click_refined_cell":
                     parent_cell = arguments["parent_cell"]
                     sub_cell = arguments["sub_cell"]
-                    parent_rows = int(arguments.get("parent_rows", 12))
-                    parent_cols = int(arguments.get("parent_cols", 12))
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    parent_rows = int(arguments.get("parent_rows", default_rows))
+                    parent_cols = int(arguments.get("parent_cols", default_cols))
                     sub_rows = int(arguments.get("sub_rows", 5))
                     sub_cols = int(arguments.get("sub_cols", 5))
                     button = arguments.get("button", "left")
