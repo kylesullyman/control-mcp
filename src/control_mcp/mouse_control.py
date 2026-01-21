@@ -108,12 +108,11 @@ class MouseController:
 
     def get_screen_size(self) -> Tuple[int, int]:
         """
-        Get the screen dimensions (fetches fresh values).
+        Get the screen dimensions (returns cached values from initialization).
 
         Returns:
             Tuple of (width, height)
         """
-        self._refresh_screen_size()
         return (self.screen_width, self.screen_height)
 
     def _refresh_screen_size(self) -> None:
