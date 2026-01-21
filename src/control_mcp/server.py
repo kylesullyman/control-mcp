@@ -27,6 +27,46 @@ class MouseControlServer:
 
         self._setup_handlers()
 
+    def _build_targeting_guidance(self, target: str, rows: int, cols: int, result: dict) -> str:
+        """Build intelligent targeting guidance for the AI."""
+        # Determine screen zones
+        zones = {
+            "menu_bar": f"Row 1 (A1-{self.mouse._get_grid_label(0, cols-1)})",
+            "dock": f"Row {rows} (bottom row, typically A{rows}-{self.mouse._get_grid_label(rows-1, cols-1)})",
+            "center": f"Around {self.mouse._get_grid_label(rows//2, cols//2)}",
+            "left_side": f"Columns A-{chr(ord('A') + cols//4)}",
+            "right_side": f"Columns {chr(ord('A') + 3*cols//4)}-{self.mouse._get_grid_label(0, cols-1).rstrip('0123456789')}",
+        }
+
+        guidance = f"""TARGET LOCATION TASK: Find and click "{target}"
+
+GRID INFO:
+- Grid: {rows}x{cols} ({rows * cols} cells)
+- Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels
+- Screen: {result['screen_width']}x{result['screen_height']}
+
+SCREEN ZONES (macOS):
+- Menu bar: {zones['menu_bar']} (Apple menu, app menus, status icons)
+- Dock: {zones['dock']} (app icons at bottom/side)
+- Center: {zones['center']} (main content area)
+
+TARGETING STRATEGY:
+1. Scan the screenshot grid to locate "{target}"
+2. Identify the cell label (e.g., 'B3', 'F7') that contains the target
+3. If target spans multiple cells, pick the cell closest to its center
+4. If target is small within a cell, consider using refine_target for precision
+5. Use click_grid_cell with the identified label
+
+COMMON PATTERNS:
+- Close/minimize/maximize buttons: Usually top-left of windows (red/yellow/green)
+- Dock icons: Bottom row, evenly spaced
+- Menu items: Top row, left-aligned
+- Dialog buttons: Bottom-center of dialogs (OK, Cancel, etc.)
+
+After identifying the cell, respond with which cell to click and why."""
+
+        return guidance
+
     def _setup_handlers(self):
         """Set up request handlers."""
 
@@ -170,10 +210,21 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="screenshot",
-                    description="Take a full screen screenshot to see what's currently on the user's screen. Use this to see the current state of the desktop, find UI elements, verify actions completed successfully, or help the user with anything visual on their screen.",
+                    description="Take a screenshot with a labeled grid overlay. This is the PRIMARY tool for seeing the screen - ALWAYS use this before clicking. The screen is divided into a grid (default 12x12) with cells labeled like a spreadsheet: columns A-Z, rows 1-N. Cell 'A1' is top-left. After examining the grid, use click_grid_cell to click the cell containing your target element.",
                     inputSchema={
                         "type": "object",
-                        "properties": {},
+                        "properties": {
+                            "rows": {
+                                "type": "number",
+                                "description": "Number of rows in the grid (default: 12). More rows = smaller cells = more precision.",
+                                "default": 12,
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Number of columns in the grid (default: 12). More columns = smaller cells = more precision.",
+                                "default": 12,
+                            },
+                        },
                         "required": [],
                     },
                 ),
@@ -257,19 +308,19 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="screenshot_with_grid",
-                    description="Take a screenshot with a labeled grid overlay for precise targeting. The screen is divided into a grid (default 10x10) with cells labeled like a spreadsheet: columns A-Z (then AA, AB...), rows 1-N. Cell 'A1' is top-left. Use this BEFORE clicking when you need precise positioning - examine the grid to find which cell contains your target, then use click_grid_cell.",
+                    description="DEPRECATED: Use 'screenshot' instead (it now always includes a grid). This tool remains for compatibility but is identical to screenshot.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (default: 10). More rows = smaller cells = more precision.",
-                                "default": 10,
+                                "description": "Number of rows in the grid (default: 12).",
+                                "default": 12,
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (default: 10). More columns = smaller cells = more precision.",
-                                "default": 10,
+                                "description": "Number of columns in the grid (default: 12).",
+                                "default": 12,
                             },
                         },
                         "required": [],
@@ -277,7 +328,7 @@ class MouseControlServer:
                 ),
                 Tool(
                     name="click_grid_cell",
-                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'C5'). Use screenshot_with_grid first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot_with_grid.",
+                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'C5'). Use screenshot first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -287,13 +338,13 @@ class MouseControlServer:
                             },
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (must match screenshot_with_grid)",
-                                "default": 10,
+                                "description": "Number of rows in the grid (must match screenshot)",
+                                "default": 12,
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (must match screenshot_with_grid)",
-                                "default": 10,
+                                "description": "Number of columns in the grid (must match screenshot)",
+                                "default": 12,
                             },
                             "button": {
                                 "type": "string",
@@ -313,6 +364,113 @@ class MouseControlServer:
                             },
                         },
                         "required": ["label"],
+                    },
+                ),
+                Tool(
+                    name="locate_and_click",
+                    description="INTELLIGENT TARGETING: Takes a screenshot with grid and a description of the target element. Use this when you need to find and click something specific on screen. Provide a clear description of what to click (e.g., 'the Safari icon in the dock', 'the close button on the dialog', 'the search field'). Returns a grid screenshot with targeting guidance.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "Description of what to click (e.g., 'the red close button', 'Safari icon in dock', 'Submit button')",
+                            },
+                            "rows": {
+                                "type": "number",
+                                "description": "Grid rows for precision (default: 12, use 20+ for small targets)",
+                                "default": 12,
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Grid columns for precision (default: 12, use 20+ for small targets)",
+                                "default": 12,
+                            },
+                        },
+                        "required": ["target"],
+                    },
+                ),
+                Tool(
+                    name="refine_target",
+                    description="PRECISION REFINEMENT: Zoom into a specific grid cell with a finer sub-grid for precise targeting. Use this after screenshot when you've identified the general area but need more precision (e.g., clicking a small button within a cell). Returns a zoomed view of just that cell with its own grid.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "cell": {
+                                "type": "string",
+                                "description": "The cell to zoom into (e.g., 'B3')",
+                            },
+                            "parent_rows": {
+                                "type": "number",
+                                "description": "Rows in the parent grid (must match previous screenshot)",
+                                "default": 12,
+                            },
+                            "parent_cols": {
+                                "type": "number",
+                                "description": "Columns in the parent grid (must match previous screenshot)",
+                                "default": 12,
+                            },
+                            "sub_rows": {
+                                "type": "number",
+                                "description": "Rows in the sub-grid (default: 5)",
+                                "default": 5,
+                            },
+                            "sub_cols": {
+                                "type": "number",
+                                "description": "Columns in the sub-grid (default: 5)",
+                                "default": 5,
+                            },
+                        },
+                        "required": ["cell"],
+                    },
+                ),
+                Tool(
+                    name="click_refined_cell",
+                    description="Click a cell within a refined/zoomed view. Use after refine_target to click a specific sub-cell within the zoomed area.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "parent_cell": {
+                                "type": "string",
+                                "description": "The parent cell that was refined (e.g., 'B3')",
+                            },
+                            "sub_cell": {
+                                "type": "string",
+                                "description": "The sub-cell to click within the refined area (e.g., 'A2')",
+                            },
+                            "parent_rows": {
+                                "type": "number",
+                                "description": "Rows in the parent grid",
+                                "default": 12,
+                            },
+                            "parent_cols": {
+                                "type": "number",
+                                "description": "Columns in the parent grid",
+                                "default": 12,
+                            },
+                            "sub_rows": {
+                                "type": "number",
+                                "description": "Rows in the sub-grid",
+                                "default": 5,
+                            },
+                            "sub_cols": {
+                                "type": "number",
+                                "description": "Columns in the sub-grid",
+                                "default": 5,
+                            },
+                            "button": {
+                                "type": "string",
+                                "enum": ["left", "right", "middle"],
+                                "description": "Mouse button to click",
+                                "default": "left",
+                            },
+                            "clicks": {
+                                "type": "number",
+                                "description": "Number of clicks",
+                                "default": 1,
+                            },
+                        },
+                        "required": ["parent_cell", "sub_cell"],
                     },
                 ),
             ]
@@ -424,16 +582,24 @@ class MouseControlServer:
                     ]
 
                 elif name == "screenshot":
-                    image_base64 = self.mouse.screenshot()
-                    log(f"  Screenshot captured ({len(image_base64)} bytes)", "INFO")
+                    rows = int(arguments.get("rows", 12))
+                    cols = int(arguments.get("cols", 12))
+                    result = self.mouse.screenshot_with_grid(rows, cols)
+                    log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
                     return [
                         TextContent(
                             type="text",
-                            text="Full screen screenshot:",
+                            text=(
+                                f"Screenshot with {rows}x{cols} grid overlay. "
+                                f"Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels. "
+                                f"Screen: {result['screen_width']}x{result['screen_height']}. "
+                                f"Labels: columns A-{self.mouse._get_grid_label(0, cols - 1).rstrip('0123456789')}, rows 1-{rows}. "
+                                f"To click a target, identify which cell contains it and use click_grid_cell with that label."
+                            ),
                         ),
                         ImageContent(
                             type="image",
-                            data=image_base64,
+                            data=result["image"],
                             mimeType="image/png",
                         ),
                     ]
@@ -493,18 +659,19 @@ class MouseControlServer:
                     ]
 
                 elif name == "screenshot_with_grid":
-                    rows = int(arguments.get("rows", 10))
-                    cols = int(arguments.get("cols", 10))
+                    # Deprecated: redirects to screenshot behavior
+                    rows = int(arguments.get("rows", 12))
+                    cols = int(arguments.get("cols", 12))
                     result = self.mouse.screenshot_with_grid(rows, cols)
-                    log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
+                    log(f"  Grid screenshot (legacy): {rows}x{cols}", "INFO")
                     return [
                         TextContent(
                             type="text",
                             text=(
+                                f"[DEPRECATED: Use 'screenshot' instead] "
                                 f"Screenshot with {rows}x{cols} grid overlay. "
                                 f"Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels. "
-                                f"Labels: columns A-{chr(ord('A') + min(cols - 1, 25))}{'...' if cols > 26 else ''}, rows 1-{rows}. "
-                                f"Use click_grid_cell with a label like 'A1', 'B3', etc. to click a cell."
+                                f"To click a target, use click_grid_cell with the cell label."
                             ),
                         ),
                         ImageContent(
@@ -516,8 +683,8 @@ class MouseControlServer:
 
                 elif name == "click_grid_cell":
                     label = arguments["label"]
-                    rows = int(arguments.get("rows", 10))
-                    cols = int(arguments.get("cols", 10))
+                    rows = int(arguments.get("rows", 12))
+                    cols = int(arguments.get("cols", 12))
                     button = arguments.get("button", "left")
                     clicks = int(arguments.get("clicks", 1))
                     interval = float(arguments.get("interval", 0.1))
@@ -533,6 +700,87 @@ class MouseControlServer:
                             text=(
                                 f"Clicked grid cell {label.upper()} at pixel coordinates ({x}, {y}) "
                                 f"with {button} button ({click_type})"
+                            ),
+                        )
+                    ]
+
+                elif name == "locate_and_click":
+                    target = arguments["target"]
+                    rows = int(arguments.get("rows", 12))
+                    cols = int(arguments.get("cols", 12))
+                    result = self.mouse.screenshot_with_grid(rows, cols)
+                    log(f"  Locate target: '{target}' ({rows}x{cols} grid)", "TOOL")
+
+                    # Build targeting guidance
+                    guidance = self._build_targeting_guidance(target, rows, cols, result)
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text=guidance,
+                        ),
+                        ImageContent(
+                            type="image",
+                            data=result["image"],
+                            mimeType="image/png",
+                        ),
+                    ]
+
+                elif name == "refine_target":
+                    cell = arguments["cell"]
+                    parent_rows = int(arguments.get("parent_rows", 12))
+                    parent_cols = int(arguments.get("parent_cols", 12))
+                    sub_rows = int(arguments.get("sub_rows", 5))
+                    sub_cols = int(arguments.get("sub_cols", 5))
+
+                    result = self.mouse.screenshot_refined_cell(
+                        cell, parent_rows, parent_cols, sub_rows, sub_cols
+                    )
+                    log(f"  Refine: {cell.upper()} -> {sub_rows}x{sub_cols} sub-grid", "TOOL")
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Zoomed into cell {cell.upper()} with {sub_rows}x{sub_cols} sub-grid. "
+                                f"Sub-cell size: {result['sub_cell_width']:.0f}x{result['sub_cell_height']:.0f} pixels. "
+                                f"Parent cell bounds: ({result['cell_x']}, {result['cell_y']}) to "
+                                f"({result['cell_x'] + result['cell_width']:.0f}, {result['cell_y'] + result['cell_height']:.0f}). "
+                                f"Use click_refined_cell with parent_cell='{cell.upper()}' and the sub_cell label to click."
+                            ),
+                        ),
+                        ImageContent(
+                            type="image",
+                            data=result["image"],
+                            mimeType="image/png",
+                        ),
+                    ]
+
+                elif name == "click_refined_cell":
+                    parent_cell = arguments["parent_cell"]
+                    sub_cell = arguments["sub_cell"]
+                    parent_rows = int(arguments.get("parent_rows", 12))
+                    parent_cols = int(arguments.get("parent_cols", 12))
+                    sub_rows = int(arguments.get("sub_rows", 5))
+                    sub_cols = int(arguments.get("sub_cols", 5))
+                    button = arguments.get("button", "left")
+                    clicks = int(arguments.get("clicks", 1))
+
+                    x, y = self.mouse.click_refined_cell(
+                        parent_cell, sub_cell,
+                        parent_rows, parent_cols,
+                        sub_rows, sub_cols,
+                        button, clicks
+                    )
+                    click_type = "double-click" if clicks == 2 else f"{clicks} click(s)"
+                    log(f"  Refined click: {parent_cell.upper()}/{sub_cell.upper()} -> ({x}, {y})", "INFO")
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Clicked sub-cell {sub_cell.upper()} within {parent_cell.upper()} "
+                                f"at pixel coordinates ({x}, {y}) with {button} button ({click_type})"
                             ),
                         )
                     ]

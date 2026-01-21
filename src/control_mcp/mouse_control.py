@@ -136,7 +136,7 @@ class MouseController:
         return 0 <= x < self.screen_width and 0 <= y < self.screen_height
 
     def _move_along_bezier(
-        self, end_x: int, end_y: int, duration: float = 0.3, curvature: float = 0.3
+        self, end_x: int, end_y: int, duration: float = 0.1, curvature: float = 0.3
     ) -> None:
         """
         Move the cursor along a bezier curve to the target position.
@@ -621,6 +621,213 @@ class MouseController:
         """
         x, y = self.get_grid_cell_center(label, rows, cols)
         self.click(x, y, button, clicks, interval)
+        return (x, y)
+
+    def get_cell_bounds(
+        self, label: str, rows: int = 12, cols: int = 12
+    ) -> Tuple[int, int, int, int]:
+        """
+        Get the pixel bounds of a grid cell.
+
+        Args:
+            label: Grid cell label like "A1", "B2"
+            rows: Total number of rows in the grid
+            cols: Total number of columns in the grid
+
+        Returns:
+            Tuple of (x, y, width, height) for the cell
+
+        Raises:
+            ValueError: If label is invalid or out of grid bounds
+        """
+        self._refresh_screen_size()
+        row_index, col_index = self._parse_grid_label(label)
+
+        # Validate bounds
+        if row_index < 0 or row_index >= rows:
+            raise ValueError(f"Row index {row_index + 1} out of bounds (1-{rows})")
+        if col_index < 0 or col_index >= cols:
+            max_col_label = self._get_grid_label(0, cols - 1).rstrip('1')
+            raise ValueError(f"Column index out of bounds (A-{max_col_label})")
+
+        cell_width = self.screen_width / cols
+        cell_height = self.screen_height / rows
+
+        x = int(col_index * cell_width)
+        y = int(row_index * cell_height)
+
+        return (x, y, int(cell_width), int(cell_height))
+
+    def screenshot_refined_cell(
+        self,
+        cell: str,
+        parent_rows: int = 12,
+        parent_cols: int = 12,
+        sub_rows: int = 5,
+        sub_cols: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Take a screenshot of a specific cell with a sub-grid overlay for precision targeting.
+
+        Args:
+            cell: Parent grid cell label (e.g., "B3")
+            parent_rows: Number of rows in the parent grid
+            parent_cols: Number of columns in the parent grid
+            sub_rows: Number of rows in the sub-grid
+            sub_cols: Number of columns in the sub-grid
+
+        Returns:
+            Dictionary containing:
+                - image: Base64-encoded PNG with sub-grid overlay
+                - cell_x, cell_y: Top-left corner of the cell
+                - cell_width, cell_height: Dimensions of the cell
+                - sub_cell_width, sub_cell_height: Dimensions of each sub-cell
+        """
+        # Get cell bounds
+        cell_x, cell_y, cell_width, cell_height = self.get_cell_bounds(
+            cell, parent_rows, parent_cols
+        )
+
+        # Take full screenshot
+        full_image = pyautogui.screenshot()
+
+        # Crop to the cell
+        cell_image = full_image.crop((
+            cell_x,
+            cell_y,
+            cell_x + cell_width,
+            cell_y + cell_height
+        ))
+
+        # Scale up the cropped image for better visibility
+        scale_factor = 3
+        scaled_width = cell_width * scale_factor
+        scaled_height = cell_height * scale_factor
+        cell_image = cell_image.resize(
+            (scaled_width, scaled_height),
+            Image.Resampling.LANCZOS
+        )
+
+        draw = ImageDraw.Draw(cell_image)
+
+        # Calculate sub-cell dimensions (on scaled image)
+        sub_cell_width = scaled_width / sub_cols
+        sub_cell_height = scaled_height / sub_rows
+
+        # Grid styling
+        grid_color = (0, 255, 0, 200)  # Green for sub-grid
+        label_color = (255, 255, 255)  # White labels
+        label_bg_color = (0, 0, 0, 180)
+
+        font_size = max(12, min(int(sub_cell_height / 3), int(sub_cell_width / 3), 20))
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+        except Exception:
+            font = ImageFont.load_default()
+
+        # Draw sub-grid lines
+        for col in range(sub_cols + 1):
+            x = int(col * sub_cell_width)
+            draw.line([(x, 0), (x, scaled_height)], fill=grid_color, width=2)
+
+        for row in range(sub_rows + 1):
+            y = int(row * sub_cell_height)
+            draw.line([(0, y), (scaled_width, y)], fill=grid_color, width=2)
+
+        # Draw sub-cell labels
+        for row in range(sub_rows):
+            for col in range(sub_cols):
+                label = self._get_grid_label(row, col)
+                label_x = int(col * sub_cell_width + sub_cell_width / 2)
+                label_y = int(row * sub_cell_height + sub_cell_height / 2)
+
+                bbox = draw.textbbox((0, 0), label, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                text_x = label_x - text_width // 2
+                text_y = label_y - text_height // 2
+
+                padding = 2
+                draw.rectangle(
+                    [text_x - padding, text_y - padding,
+                     text_x + text_width + padding, text_y + text_height + padding],
+                    fill=label_bg_color,
+                )
+                draw.text((text_x, text_y), label, fill=label_color, font=font)
+
+        # Add border and title
+        draw.rectangle(
+            [0, 0, scaled_width - 1, scaled_height - 1],
+            outline=(255, 255, 0),
+            width=3
+        )
+
+        # Convert to base64
+        buffer = io.BytesIO()
+        cell_image.save(buffer, format="PNG")
+        buffer.seek(0)
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        return {
+            "image": image_base64,
+            "cell_x": cell_x,
+            "cell_y": cell_y,
+            "cell_width": cell_width,
+            "cell_height": cell_height,
+            "sub_cell_width": cell_width / sub_cols,  # Actual pixel size, not scaled
+            "sub_cell_height": cell_height / sub_rows,
+        }
+
+    def click_refined_cell(
+        self,
+        parent_cell: str,
+        sub_cell: str,
+        parent_rows: int = 12,
+        parent_cols: int = 12,
+        sub_rows: int = 5,
+        sub_cols: int = 5,
+        button: Literal["left", "right", "middle"] = "left",
+        clicks: int = 1,
+    ) -> Tuple[int, int]:
+        """
+        Click a sub-cell within a refined grid area.
+
+        Args:
+            parent_cell: Parent grid cell label (e.g., "B3")
+            sub_cell: Sub-cell label within the parent (e.g., "A2")
+            parent_rows: Rows in parent grid
+            parent_cols: Columns in parent grid
+            sub_rows: Rows in sub-grid
+            sub_cols: Columns in sub-grid
+            button: Mouse button to click
+            clicks: Number of clicks
+
+        Returns:
+            Tuple of (x, y) coordinates where click occurred
+        """
+        # Get parent cell bounds
+        cell_x, cell_y, cell_width, cell_height = self.get_cell_bounds(
+            parent_cell, parent_rows, parent_cols
+        )
+
+        # Parse sub-cell
+        sub_row, sub_col = self._parse_grid_label(sub_cell)
+
+        # Validate sub-cell bounds
+        if sub_row < 0 or sub_row >= sub_rows:
+            raise ValueError(f"Sub-cell row {sub_row + 1} out of bounds (1-{sub_rows})")
+        if sub_col < 0 or sub_col >= sub_cols:
+            raise ValueError(f"Sub-cell column out of bounds")
+
+        # Calculate sub-cell dimensions
+        sub_cell_width = cell_width / sub_cols
+        sub_cell_height = cell_height / sub_rows
+
+        # Calculate center of sub-cell
+        x = int(cell_x + sub_col * sub_cell_width + sub_cell_width / 2)
+        y = int(cell_y + sub_row * sub_cell_height + sub_cell_height / 2)
+
+        self.click(x, y, button, clicks)
         return (x, y)
 
     def keyboard_shortcut(self, *keys: str) -> None:
