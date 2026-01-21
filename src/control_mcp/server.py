@@ -2,7 +2,8 @@
 
 import asyncio
 import sys
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -12,12 +13,64 @@ from .mouse_control import MouseController
 from .log_window import start_log_window, log
 
 
+def load_settings() -> Dict[str, Any]:
+    """
+    Load settings from settings.txt file.
+
+    Returns:
+        Dictionary with settings (pixels_per_second, use_bezier)
+    """
+    # Default settings
+    settings = {
+        "pixels_per_second": 2000.0,
+        "use_bezier": True,
+    }
+
+    # Find settings.txt in the project root (parent of src)
+    current_dir = Path(__file__).parent
+    settings_file = current_dir.parent.parent / "settings.txt"
+
+    if not settings_file.exists():
+        return settings
+
+    try:
+        with open(settings_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith("#"):
+                    continue
+
+                # Parse key=value pairs
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+
+                    if key == "pixels_per_second":
+                        try:
+                            settings["pixels_per_second"] = float(value)
+                        except ValueError:
+                            pass  # Keep default
+
+                    elif key == "use_bezier":
+                        settings["use_bezier"] = value.lower() in ("true", "yes", "1", "on")
+
+    except Exception:
+        pass  # Keep defaults
+
+    return settings
+
+
 class MouseControlServer:
     """MCP server that provides mouse control tools."""
 
     def __init__(self):
         """Initialize the server."""
         self.server = Server("control-mcp")
+        # Initialize mouse controller
+        # To use straight line movement instead of bezier curves, pass use_bezier=False
+        # To adjust movement speed, pass pixels_per_second (default: 2000.0)
         self.mouse = MouseController()
 
         # Start the log window
@@ -85,17 +138,17 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="move_cursor",
-                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. Movement duration is automatically calculated based on distance (longer distances take proportionally more time). Movements are smooth and follow a natural bezier curve.",
+                    description="Move the mouse cursor to specific screen coordinates. IMPORTANT: ALWAYS use screenshot_with_grid FIRST to identify the target coordinates before calling this tool. Use click_grid_cell instead if you plan to click after moving. Movement duration is automatically calculated based on distance. Movements are smooth and follow a natural bezier curve.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate (pixels from left edge of screen)",
+                                "description": "X coordinate (pixels from left edge of screen). Get this from screenshot_with_grid by identifying the cell center.",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate (pixels from top edge of screen)",
+                                "description": "Y coordinate (pixels from top edge of screen). Get this from screenshot_with_grid by identifying the cell center.",
                             },
                             "duration": {
                                 "type": "number",
@@ -107,17 +160,17 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="click",
-                    description="Perform mouse click to interact with UI elements like buttons, links, menus, icons, checkboxes, or any clickable element. Supports left/right/middle click, double-click, and clicking at specific coordinates or current cursor position.",
+                    description="Perform mouse click using pixel coordinates. IMPORTANT: Use click_grid_cell instead (it's easier and more accurate). Only use this if you already know exact pixel coordinates. For targeting UI elements, use screenshot_with_grid + click_grid_cell.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate to click at (optional, uses current cursor position if not provided)",
+                                "description": "X coordinate to click at (optional, uses current cursor position if not provided). Get from screenshot_with_grid if needed.",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate to click at (optional, uses current cursor position if not provided)",
+                                "description": "Y coordinate to click at (optional, uses current cursor position if not provided). Get from screenshot_with_grid if needed.",
                             },
                             "button": {
                                 "type": "string",
@@ -140,26 +193,63 @@ After identifying the cell, respond with which cell to click and why."""
                     },
                 ),
                 Tool(
+                    name="drag_grid_cells",
+                    description="Drag from one grid cell to another. Use screenshot_with_grid first to identify the cells. Simpler than drag when working with grid coordinates.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "from_label": {
+                                "type": "string",
+                                "description": "Starting grid cell label (e.g., 'A1', 'B3')",
+                            },
+                            "to_label": {
+                                "type": "string",
+                                "description": "Ending grid cell label (e.g., 'C5', 'D10')",
+                            },
+                            "rows": {
+                                "type": "number",
+                                "description": "Number of rows in the grid (must match screenshot_with_grid). Default is screen_height/2.",
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Number of columns in the grid (must match screenshot_with_grid). Default is screen_width/2.",
+                            },
+                            "duration": {
+                                "type": "number",
+                                "description": "Duration of drag in seconds",
+                                "default": 0.5,
+                            },
+                            "button": {
+                                "type": "string",
+                                "enum": ["left", "right", "middle"],
+                                "description": "Mouse button to use for dragging",
+                                "default": "left",
+                            },
+                        },
+                        "required": ["from_label", "to_label"],
+                    },
+                ),
+                Tool(
                     name="drag",
-                    description="Drag from one position to another. Use for moving files, selecting text, resizing windows, drawing, or any drag-and-drop operation on the user's screen.",
+                    description="Drag from one position to another using pixel coordinates. IMPORTANT: Use screenshot_with_grid FIRST to identify coordinates, or use drag_grid_cells for easier grid-based dragging.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "from_x": {
                                 "type": "number",
-                                "description": "Starting X coordinate",
+                                "description": "Starting X coordinate (get from screenshot_with_grid)",
                             },
                             "from_y": {
                                 "type": "number",
-                                "description": "Starting Y coordinate",
+                                "description": "Starting Y coordinate (get from screenshot_with_grid)",
                             },
                             "to_x": {
                                 "type": "number",
-                                "description": "Ending X coordinate",
+                                "description": "Ending X coordinate (get from screenshot_with_grid)",
                             },
                             "to_y": {
                                 "type": "number",
-                                "description": "Ending Y coordinate",
+                                "description": "Ending Y coordinate (get from screenshot_with_grid)",
                             },
                             "duration": {
                                 "type": "number",
@@ -178,7 +268,7 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="scroll",
-                    description="Scroll up or down on a page or within an application. Use for scrolling through documents, web pages, lists, or any scrollable content on the user's screen.",
+                    description="Scroll up or down at current cursor position or at specific coordinates. If providing coordinates, use screenshot_with_grid first to identify the location. Good for scrolling through documents, web pages, lists, or any scrollable content.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -188,11 +278,11 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "x": {
                                 "type": "number",
-                                "description": "X coordinate to scroll at (optional, scrolls at current cursor position if not provided)",
+                                "description": "X coordinate to scroll at (optional, scrolls at current cursor position if not provided). Use screenshot_with_grid to identify coordinates.",
                             },
                             "y": {
                                 "type": "number",
-                                "description": "Y coordinate to scroll at (optional, scrolls at current cursor position if not provided)",
+                                "description": "Y coordinate to scroll at (optional, scrolls at current cursor position if not provided). Use screenshot_with_grid to identify coordinates.",
                             },
                         },
                         "required": ["amount"],
@@ -313,8 +403,30 @@ After identifying the cell, respond with which cell to click and why."""
                     },
                 ),
                 Tool(
+                    name="move_to_grid_cell",
+                    description="Move cursor to the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'ZZ500'). Use screenshot_with_grid first to identify the target cell. This moves without clicking - use click_grid_cell if you want to click after moving.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "type": "string",
+                                "description": "Grid cell label to move to (e.g., 'A1', 'B3', 'AA100'). Column letters + row number.",
+                            },
+                            "rows": {
+                                "type": "number",
+                                "description": "Number of rows in the grid (must match screenshot_with_grid). Default is screen_height/2.",
+                            },
+                            "cols": {
+                                "type": "number",
+                                "description": "Number of columns in the grid (must match screenshot_with_grid). Default is screen_width/2.",
+                            },
+                        },
+                        "required": ["label"],
+                    },
+                ),
+                Tool(
                     name="click_grid_cell",
-                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'ZZ500'). Use screenshot first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot.",
+                    description="Click at the center of a grid cell identified by its label (e.g., 'A1', 'B3', 'ZZ500'). Use screenshot_with_grid first to see the grid, then click the cell containing your target. The grid dimensions must match those used in screenshot_with_grid.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -324,11 +436,11 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid (must match screenshot). Default is screen_height/2.",
+                                "description": "Number of rows in the grid (must match screenshot_with_grid). Default is screen_height/2.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid (must match screenshot). Default is screen_width/2.",
+                                "description": "Number of columns in the grid (must match screenshot_with_grid). Default is screen_width/2.",
                             },
                             "button": {
                                 "type": "string",
@@ -515,6 +627,30 @@ After identifying the cell, respond with which cell to click and why."""
                         )
                     ]
 
+                elif name == "drag_grid_cells":
+                    from_label = arguments["from_label"]
+                    to_label = arguments["to_label"]
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
+                    duration = float(arguments.get("duration", 0.5))
+                    button = arguments.get("button", "left")
+
+                    from_x, from_y = self.mouse.get_grid_cell_center(from_label, rows, cols)
+                    to_x, to_y = self.mouse.get_grid_cell_center(to_label, rows, cols)
+                    self.mouse.drag(from_x, from_y, to_x, to_y, duration, button)
+                    log(f"  Grid drag: {from_label.upper()} -> {to_label.upper()} ({from_x},{from_y}) -> ({to_x},{to_y})", "INFO")
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Dragged with {button} button from grid cell {from_label.upper()} ({from_x}, {from_y}) "
+                                f"to grid cell {to_label.upper()} ({to_x}, {to_y})"
+                            ),
+                        )
+                    ]
+
                 elif name == "drag":
                     from_x = int(arguments["from_x"])
                     from_y = int(arguments["from_y"])
@@ -652,6 +788,25 @@ After identifying the cell, respond with which cell to click and why."""
                             data=result["image"],
                             mimeType="image/png",
                         ),
+                    ]
+
+                elif name == "move_to_grid_cell":
+                    label = arguments["label"]
+                    default_rows = self.mouse.screen_height // 2
+                    default_cols = self.mouse.screen_width // 2
+                    rows = int(arguments.get("rows", default_rows))
+                    cols = int(arguments.get("cols", default_cols))
+
+                    x, y = self.mouse.get_grid_cell_center(label, rows, cols)
+                    self.mouse.move_cursor(x, y)
+                    log(f"  Grid move: {label.upper()} -> ({x}, {y})", "INFO")
+                    return [
+                        TextContent(
+                            type="text",
+                            text=(
+                                f"Moved cursor to grid cell {label.upper()} at pixel coordinates ({x}, {y})"
+                            ),
+                        )
                     ]
 
                 elif name == "click_grid_cell":
