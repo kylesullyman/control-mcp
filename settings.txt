@@ -1,0 +1,12 @@
+# Mouse Control MCP Server Settings
+# Edit these values to configure mouse movement behavior
+
+# Movement speed in pixels per second
+# Higher values = faster movement (e.g., 3000), Lower values = slower movement (e.g., 1000)
+# Default: 2000.0
+pixels_per_second=2000.0
+
+# Use curved bezier paths for natural-looking movement
+# Set to 'true' for curved movement, 'false' for straight line movement
+# Default: true
+use_bezier=false

@@ -93,9 +93,19 @@ def _generate_bezier_path(
 class MouseController:
     """Handles low-level mouse control operations."""
 
-    def __init__(self):
-        """Initialize the mouse controller."""
+    def __init__(self, pixels_per_second: float = 2000.0, use_bezier: bool = True):
+        """Initialize the mouse controller.
+
+        Args:
+            pixels_per_second: Speed of cursor movement (default: 2000.0)
+                Higher values = faster movement
+                Lower values = slower movement
+            use_bezier: If True, use curved bezier paths for movement.
+                If False, use straight line movement (default: True)
+        """
         self.screen_width, self.screen_height = pyautogui.size()
+        self.pixels_per_second = pixels_per_second
+        self.use_bezier = use_bezier
 
     def get_cursor_position(self) -> Tuple[int, int]:
         """
@@ -134,6 +144,24 @@ class MouseController:
         """
         self._refresh_screen_size()
         return 0 <= x < self.screen_width and 0 <= y < self.screen_height
+
+    def _calculate_duration(self, start_x: int, start_y: int, end_x: int, end_y: int) -> float:
+        """
+        Calculate movement duration based on distance and speed.
+
+        Args:
+            start_x: Starting X coordinate
+            start_y: Starting Y coordinate
+            end_x: Ending X coordinate
+            end_y: Ending Y coordinate
+
+        Returns:
+            Duration in seconds based on distance and pixels_per_second
+        """
+        distance = ((end_x - start_x) ** 2 + (end_y - start_y) ** 2) ** 0.5
+        duration = distance / self.pixels_per_second
+        # Set minimum duration to avoid instant jumps
+        return max(0.05, duration)
 
     def _move_along_bezier(
         self, end_x: int, end_y: int, duration: float = 0.1, curvature: float = 0.3
@@ -239,14 +267,16 @@ class MouseController:
         finally:
             pyautogui.PAUSE = original_pause
 
-    def move_cursor(self, x: int, y: int, duration: float = 0.3) -> None:
+    def move_cursor(self, x: int, y: int, duration: Optional[float] = None) -> None:
         """
-        Move the cursor to specified coordinates along a bezier curve.
+        Move the cursor to specified coordinates.
+        Movement speed is automatically calculated based on distance.
 
         Args:
             x: X coordinate
             y: Y coordinate
-            duration: Time in seconds for smooth movement (default: 0.3)
+            duration: Optional override for movement duration in seconds.
+                     If not provided, duration is calculated based on distance.
 
         Raises:
             ValueError: If coordinates are outside screen bounds
@@ -257,7 +287,15 @@ class MouseController:
                 f"(0-{self.screen_width}, 0-{self.screen_height})"
             )
 
-        self._move_along_bezier(x, y, duration=duration)
+        # Calculate duration based on distance if not provided
+        if duration is None:
+            current_x, current_y = pyautogui.position()
+            duration = self._calculate_duration(current_x, current_y, x, y)
+
+        if self.use_bezier:
+            self._move_along_bezier(x, y, duration=duration)
+        else:
+            pyautogui.moveTo(x, y, duration=duration)
 
     def click(
         self,
@@ -289,8 +327,14 @@ class MouseController:
                     f"Coordinates ({x}, {y}) are outside screen bounds "
                     f"(0-{self.screen_width}, 0-{self.screen_height})"
                 )
-            # Move to position with bezier curve animation first
-            self._move_along_bezier(x, y, duration=0.3)
+            # Calculate duration based on distance
+            current_x, current_y = pyautogui.position()
+            duration = self._calculate_duration(current_x, current_y, x, y)
+            # Move to position first
+            if self.use_bezier:
+                self._move_along_bezier(x, y, duration=duration)
+            else:
+                pyautogui.moveTo(x, y, duration=duration)
             # Then click at the current position
             pyautogui.click(clicks=clicks, interval=interval, button=button)
         else:
@@ -334,10 +378,20 @@ class MouseController:
                 f"(0-{self.screen_width}, 0-{self.screen_height})"
             )
 
-        # Move to start position first with bezier curve
-        self._move_along_bezier(from_x, from_y, duration=0.3)
-        # Perform drag along bezier curve
-        self._drag_along_bezier(to_x, to_y, duration=duration, button=button)
+        # Calculate duration for initial movement based on distance
+        current_x, current_y = pyautogui.position()
+        move_duration = self._calculate_duration(current_x, current_y, from_x, from_y)
+        # Move to start position first
+        if self.use_bezier:
+            self._move_along_bezier(from_x, from_y, duration=move_duration)
+        else:
+            pyautogui.moveTo(from_x, from_y, duration=move_duration)
+
+        # Perform drag
+        if self.use_bezier:
+            self._drag_along_bezier(to_x, to_y, duration=duration, button=button)
+        else:
+            pyautogui.drag(to_x - from_x, to_y - from_y, duration=duration, button=button)
 
     def scroll(
         self, amount: int, x: Optional[int] = None, y: Optional[int] = None
@@ -359,7 +413,13 @@ class MouseController:
                     f"Coordinates ({x}, {y}) are outside screen bounds "
                     f"(0-{self.screen_width}, 0-{self.screen_height})"
                 )
-            self._move_along_bezier(x, y, duration=0.3)
+            # Calculate duration based on distance
+            current_x, current_y = pyautogui.position()
+            duration = self._calculate_duration(current_x, current_y, x, y)
+            if self.use_bezier:
+                self._move_along_bezier(x, y, duration=duration)
+            else:
+                pyautogui.moveTo(x, y, duration=duration)
 
         pyautogui.scroll(amount)
 

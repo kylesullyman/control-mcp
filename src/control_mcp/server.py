@@ -68,15 +68,21 @@ class MouseControlServer:
     def __init__(self):
         """Initialize the server."""
         self.server = Server("control-mcp")
-        # Initialize mouse controller
-        # To use straight line movement instead of bezier curves, pass use_bezier=False
-        # To adjust movement speed, pass pixels_per_second (default: 2000.0)
-        self.mouse = MouseController()
+
+        # Load settings from settings.txt
+        settings = load_settings()
+
+        # Initialize mouse controller with settings
+        self.mouse = MouseController(
+            pixels_per_second=settings["pixels_per_second"],
+            use_bezier=settings["use_bezier"]
+        )
 
         # Start the log window
         self.log_window = start_log_window()
         log("MCP Server initialized", "INFO")
         log(f"Screen size: {self.mouse.screen_width}x{self.mouse.screen_height}", "INFO")
+        log(f"Movement: {'bezier curves' if settings['use_bezier'] else 'straight line'} at {settings['pixels_per_second']} px/s", "INFO")
 
         self._setup_handlers()
 
