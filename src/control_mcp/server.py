@@ -85,7 +85,7 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="move_cursor",
-                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. All movements are smooth and animated over 0.3 seconds by default.",
+                    description="Move the mouse cursor to specific screen coordinates. Use this to navigate to buttons, menus, icons, or any UI element on the user's screen. Movement duration is automatically calculated based on distance (longer distances take proportionally more time). Movements are smooth and follow a natural bezier curve.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -99,8 +99,7 @@ After identifying the cell, respond with which cell to click and why."""
                             },
                             "duration": {
                                 "type": "number",
-                                "description": "Duration of movement in seconds (default: 0.3 for smooth movement)",
-                                "default": 0.3,
+                                "description": "Optional override for movement duration in seconds. If not provided, duration is automatically calculated based on distance (default speed: 2000 pixels/second).",
                             },
                         },
                         "required": ["x", "y"],
@@ -210,19 +209,10 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="screenshot",
-                    description="Take a screenshot with a labeled grid overlay. This is the PRIMARY tool for seeing the screen - ALWAYS use this before clicking. The screen is divided into a fine grid (default: rows=screen_height/2, cols=screen_width/2, creating ~2x2 pixel cells). Cells are labeled like a spreadsheet: columns A-Z (then AA, AB...), rows 1-N. Cell 'A1' is top-left. After examining the grid, use click_grid_cell to click the cell containing your target element.",
+                    description="Take a clean screenshot to see what's currently on the user's screen. Use this to see the current state of the desktop, verify actions completed successfully, or help the user with anything visual on their screen. For clicking/targeting UI elements, use screenshot_with_grid instead.",
                     inputSchema={
                         "type": "object",
-                        "properties": {
-                            "rows": {
-                                "type": "number",
-                                "description": "Number of rows in the grid. Default is screen_height/2 for ~2px tall cells.",
-                            },
-                            "cols": {
-                                "type": "number",
-                                "description": "Number of columns in the grid. Default is screen_width/2 for ~2px wide cells.",
-                            },
-                        },
+                        "properties": {},
                         "required": [],
                     },
                 ),
@@ -306,17 +296,17 @@ After identifying the cell, respond with which cell to click and why."""
                 ),
                 Tool(
                     name="screenshot_with_grid",
-                    description="DEPRECATED: Use 'screenshot' instead (it now always includes a grid). This tool remains for compatibility but is identical to screenshot.",
+                    description="Take a screenshot with a labeled grid overlay for precise targeting. ALWAYS use this BEFORE clicking to locate UI elements. The screen is divided into a fine grid (default: rows=screen_height/2, cols=screen_width/2, creating ~2x2 pixel cells). Cells are labeled like a spreadsheet: columns A-Z (then AA, AB...), rows 1-N. Cell 'A1' is top-left. After examining the grid, use click_grid_cell to click the cell containing your target.",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "rows": {
                                 "type": "number",
-                                "description": "Number of rows in the grid. Default is screen_height/2.",
+                                "description": "Number of rows in the grid. Default is screen_height/2 for ~2px tall cells.",
                             },
                             "cols": {
                                 "type": "number",
-                                "description": "Number of columns in the grid. Default is screen_width/2.",
+                                "description": "Number of columns in the grid. Default is screen_width/2 for ~2px wide cells.",
                             },
                         },
                         "required": [],
@@ -570,27 +560,16 @@ After identifying the cell, respond with which cell to click and why."""
                     ]
 
                 elif name == "screenshot":
-                    # Default to half screen dimensions for ~2x2 pixel cells
-                    default_rows = self.mouse.screen_height // 2
-                    default_cols = self.mouse.screen_width // 2
-                    rows = int(arguments.get("rows", default_rows))
-                    cols = int(arguments.get("cols", default_cols))
-                    result = self.mouse.screenshot_with_grid(rows, cols)
-                    log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
+                    image_base64 = self.mouse.screenshot()
+                    log(f"  Screenshot captured ({len(image_base64)} bytes)", "INFO")
                     return [
                         TextContent(
                             type="text",
-                            text=(
-                                f"Screenshot with {rows}x{cols} grid overlay. "
-                                f"Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels. "
-                                f"Screen: {result['screen_width']}x{result['screen_height']}. "
-                                f"Labels: columns A-{self.mouse._get_grid_label(0, cols - 1).rstrip('0123456789')}, rows 1-{rows}. "
-                                f"To click a target, identify which cell contains it and use click_grid_cell with that label."
-                            ),
+                            text="Clean screenshot of current screen state:",
                         ),
                         ImageContent(
                             type="image",
-                            data=result["image"],
+                            data=image_base64,
                             mimeType="image/png",
                         ),
                     ]
@@ -650,21 +629,22 @@ After identifying the cell, respond with which cell to click and why."""
                     ]
 
                 elif name == "screenshot_with_grid":
-                    # Deprecated: redirects to screenshot behavior
+                    # Default to half screen dimensions for ~2x2 pixel cells
                     default_rows = self.mouse.screen_height // 2
                     default_cols = self.mouse.screen_width // 2
                     rows = int(arguments.get("rows", default_rows))
                     cols = int(arguments.get("cols", default_cols))
                     result = self.mouse.screenshot_with_grid(rows, cols)
-                    log(f"  Grid screenshot (legacy): {rows}x{cols}", "INFO")
+                    log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
                     return [
                         TextContent(
                             type="text",
                             text=(
-                                f"[DEPRECATED: Use 'screenshot' instead] "
-                                f"Screenshot with {rows}x{cols} grid overlay. "
+                                f"Screenshot with {rows}x{cols} grid overlay for targeting. "
                                 f"Cell size: {result['cell_width']:.0f}x{result['cell_height']:.0f} pixels. "
-                                f"To click a target, use click_grid_cell with the cell label."
+                                f"Screen: {result['screen_width']}x{result['screen_height']}. "
+                                f"Labels: columns A-{self.mouse._get_grid_label(0, cols - 1).rstrip('0123456789')}, rows 1-{rows}. "
+                                f"To click a target, identify which cell contains it and use click_grid_cell with that label."
                             ),
                         ),
                         ImageContent(
