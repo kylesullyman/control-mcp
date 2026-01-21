@@ -240,8 +240,9 @@ class MouseControlServer:
                             },
                             "delay": {
                                 "type": "number",
-                                "description": "Time to wait for Spotlight to appear before typing (default: 0.5 seconds)",
+                                "description": "Time to wait for Spotlight to appear before typing (default: 0.5s, max: 1.0s)",
                                 "default": 0.5,
+                                "maximum": 1.0,
                             },
                         },
                         "required": ["app_name"],

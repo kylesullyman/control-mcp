@@ -432,7 +432,7 @@ class MouseController:
 
         Args:
             app_name: The name of the application to open (e.g., "Safari", "Terminal")
-            delay: Time to wait for Spotlight to appear before typing (default: 0.5s)
+            delay: Time to wait for Spotlight to appear before typing (default: 0.5s, max: 1.0s)
 
         This method:
         1. Opens Spotlight with Command+Space
@@ -443,8 +443,8 @@ class MouseController:
         # Open Spotlight
         pyautogui.hotkey("command", "space")
 
-        # Wait for Spotlight to appear
-        time.sleep(delay)
+        # Wait for Spotlight to appear (cap at 1 second max)
+        time.sleep(min(delay, 1.0))
 
         # Type the app name
         pyautogui.write(app_name, interval=0.02)
