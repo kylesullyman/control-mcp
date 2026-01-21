@@ -9,6 +9,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent
 
 from .mouse_control import MouseController
+from .log_window import start_log_window, log
 
 
 class MouseControlServer:
@@ -18,6 +19,12 @@ class MouseControlServer:
         """Initialize the server."""
         self.server = Server("control-mcp")
         self.mouse = MouseController()
+
+        # Start the log window
+        self.log_window = start_log_window()
+        log("MCP Server initialized", "INFO")
+        log(f"Screen size: {self.mouse.screen_width}x{self.mouse.screen_height}", "INFO")
+
         self._setup_handlers()
 
     def _setup_handlers(self):
@@ -313,13 +320,26 @@ class MouseControlServer:
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[Union[TextContent, ImageContent]]:
             """Handle tool calls."""
+            log(f"Tool called: {name}", "TOOL")
+            if arguments:
+                # Format arguments for logging (truncate long values)
+                log_args = {}
+                for k, v in arguments.items():
+                    if isinstance(v, str) and len(v) > 50:
+                        log_args[k] = v[:47] + "..."
+                    else:
+                        log_args[k] = v
+                log(f"  Arguments: {log_args}", "DEBUG")
+
             try:
                 if name == "get_cursor_position":
                     x, y = self.mouse.get_cursor_position()
+                    result_text = f"Current cursor position: x={x}, y={y}"
+                    log(f"  Result: ({x}, {y})", "INFO")
                     return [
                         TextContent(
                             type="text",
-                            text=f"Current cursor position: x={x}, y={y}",
+                            text=result_text,
                         )
                     ]
 
@@ -332,6 +352,7 @@ class MouseControlServer:
                         self.mouse.move_cursor(x, y, duration)
                     else:
                         self.mouse.move_cursor(x, y)
+                    log(f"  Moved to ({x}, {y})", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -350,6 +371,7 @@ class MouseControlServer:
 
                     position_str = f"at x={x}, y={y}" if x is not None and y is not None else "at current position"
                     click_type = "double-click" if clicks == 2 else f"{clicks} click(s)"
+                    log(f"  {click_type} ({button}) {position_str}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -366,6 +388,7 @@ class MouseControlServer:
                     button = arguments.get("button", "left")
 
                     self.mouse.drag(from_x, from_y, to_x, to_y, duration, button)
+                    log(f"  Dragged ({from_x},{from_y}) -> ({to_x},{to_y})", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -382,6 +405,7 @@ class MouseControlServer:
 
                     position_str = f"at x={x}, y={y}" if x is not None and y is not None else "at current position"
                     direction = "up" if amount > 0 else "down"
+                    log(f"  Scrolled {direction} by {abs(amount)}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -391,6 +415,7 @@ class MouseControlServer:
 
                 elif name == "get_screen_size":
                     width, height = self.mouse.get_screen_size()
+                    log(f"  Screen: {width}x{height}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -400,6 +425,7 @@ class MouseControlServer:
 
                 elif name == "screenshot":
                     image_base64 = self.mouse.screenshot()
+                    log(f"  Screenshot captured ({len(image_base64)} bytes)", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -418,6 +444,7 @@ class MouseControlServer:
                         raise ValueError("keys must be a non-empty list of key names")
                     self.mouse.keyboard_shortcut(*keys)
                     keys_str = "+".join(keys)
+                    log(f"  Shortcut: {keys_str}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -430,11 +457,12 @@ class MouseControlServer:
                     presses = int(arguments.get("presses", 1))
                     interval = float(arguments.get("interval", 0.1))
                     self.mouse.key_press(key, presses, interval)
-                    press_str = f"{presses} time(s)" if presses > 1 else ""
+                    press_str = f" x{presses}" if presses > 1 else ""
+                    log(f"  Key: {key}{press_str}", "INFO")
                     return [
                         TextContent(
                             type="text",
-                            text=f"Pressed key: {key} {press_str}".strip(),
+                            text=f"Pressed key: {key} {f'{presses} time(s)' if presses > 1 else ''}".strip(),
                         )
                     ]
 
@@ -444,6 +472,7 @@ class MouseControlServer:
                     self.mouse.type_text(text, interval)
                     # Truncate displayed text if too long
                     display_text = text if len(text) <= 50 else text[:47] + "..."
+                    log(f"  Typed: {display_text}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -455,6 +484,7 @@ class MouseControlServer:
                     app_name = arguments["app_name"]
                     delay = float(arguments.get("delay", 0.5))
                     self.mouse.open_app(app_name, delay)
+                    log(f"  Opening: {app_name}", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -466,6 +496,7 @@ class MouseControlServer:
                     rows = int(arguments.get("rows", 10))
                     cols = int(arguments.get("cols", 10))
                     result = self.mouse.screenshot_with_grid(rows, cols)
+                    log(f"  Grid screenshot: {rows}x{cols} ({result['cell_width']:.0f}x{result['cell_height']:.0f} cells)", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -495,6 +526,7 @@ class MouseControlServer:
                         label, rows, cols, button, clicks, interval
                     )
                     click_type = "double-click" if clicks == 2 else f"{clicks} click(s)"
+                    log(f"  Grid click: {label.upper()} -> ({x}, {y})", "INFO")
                     return [
                         TextContent(
                             type="text",
@@ -506,6 +538,7 @@ class MouseControlServer:
                     ]
 
                 else:
+                    log(f"  Unknown tool: {name}", "WARN")
                     return [
                         TextContent(
                             type="text",
@@ -514,6 +547,7 @@ class MouseControlServer:
                     ]
 
             except ValueError as e:
+                log(f"  Error: {str(e)}", "ERROR")
                 return [
                     TextContent(
                         type="text",
@@ -521,6 +555,7 @@ class MouseControlServer:
                     )
                 ]
             except Exception as e:
+                log(f"  Unexpected error: {str(e)}", "ERROR")
                 return [
                     TextContent(
                         type="text",
@@ -530,12 +565,15 @@ class MouseControlServer:
 
     async def run(self):
         """Run the server."""
+        log("Server starting - waiting for connections...", "INFO")
         async with stdio_server() as (read_stream, write_stream):
+            log("Client connected", "INFO")
             await self.server.run(
                 read_stream,
                 write_stream,
                 self.server.create_initialization_options(),
             )
+        log("Server shutting down", "INFO")
 
 
 def main():
