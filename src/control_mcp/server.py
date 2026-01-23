@@ -12,6 +12,23 @@ from mcp.types import Tool, TextContent, ImageContent
 from .mouse_control import MouseController
 from .log_window import start_log_window, log
 
+# Try to import accessibility module (may fail if pyobjc not installed)
+try:
+    from .accessibility import (
+        AccessibilityController,
+        ACCESSIBILITY_AVAILABLE,
+        ROLE_BUTTON,
+        ROLE_CHECKBOX,
+        ROLE_LINK,
+        ROLE_MENU_ITEM,
+        ROLE_TEXT_FIELD,
+        ROLE_STATIC_TEXT,
+        ROLE_POP_UP_BUTTON,
+    )
+except ImportError:
+    ACCESSIBILITY_AVAILABLE = False
+    AccessibilityController = None
+
 
 def load_settings() -> Dict[str, Any]:
     """
@@ -83,6 +100,20 @@ class MouseControlServer:
         log("MCP Server initialized", "INFO")
         log(f"Screen size: {self.mouse.screen_width}x{self.mouse.screen_height}", "INFO")
         log(f"Movement: {'bezier curves' if settings['use_bezier'] else 'straight line'} at {settings['pixels_per_second']} px/s", "INFO")
+
+        # Initialize accessibility controller if available
+        self.accessibility = None
+        if ACCESSIBILITY_AVAILABLE:
+            try:
+                self.accessibility = AccessibilityController()
+                if self.accessibility.has_permissions():
+                    log("Accessibility API: enabled", "INFO")
+                else:
+                    log("Accessibility API: no permissions (enable in System Preferences)", "WARN")
+            except Exception as e:
+                log(f"Accessibility API: init failed ({e})", "WARN")
+        else:
+            log("Accessibility API: not available (install pyobjc)", "WARN")
 
         self._setup_handlers()
 
@@ -569,6 +600,174 @@ After identifying the cell, respond with which cell to click and why."""
                         "required": ["parent_cell", "sub_cell"],
                     },
                 ),
+                # Accessibility API Tools
+                Tool(
+                    name="click_button",
+                    description="ACCESSIBILITY API: Click a button by its text label using macOS Accessibility API. This is more reliable than coordinate-based clicking as it uses the native UI element interaction. Requires accessibility permissions to be enabled in System Preferences > Privacy & Security > Accessibility.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Exact button title to click (e.g., 'OK', 'Cancel', 'Save')",
+                            },
+                            "title_contains": {
+                                "type": "string",
+                                "description": "Substring to match in button title (case-insensitive). Use this for partial matches like 'Save' to match 'Save As...'",
+                            },
+                            "in_focused_window": {
+                                "type": "boolean",
+                                "description": "Only search in the focused window (default: true). Set to false to search entire application.",
+                                "default": True,
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="find_buttons",
+                    description="ACCESSIBILITY API: Find all buttons in the current window or application. Returns button titles, positions, and enabled states. Use this to discover available buttons before clicking.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "title_contains": {
+                                "type": "string",
+                                "description": "Optional filter: only return buttons containing this text in their title",
+                            },
+                            "in_focused_window": {
+                                "type": "boolean",
+                                "description": "Only search in focused window (default: true)",
+                                "default": True,
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="find_ui_elements",
+                    description="ACCESSIBILITY API: Find UI elements by role and/or title. Useful for discovering interactive elements like checkboxes, text fields, links, etc.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "description": "Element role to search for. Common values: 'AXButton', 'AXCheckBox', 'AXTextField', 'AXStaticText', 'AXLink', 'AXMenuItem', 'AXPopUpButton'",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Exact title to match",
+                            },
+                            "title_contains": {
+                                "type": "string",
+                                "description": "Substring to match in title (case-insensitive)",
+                            },
+                            "in_focused_window": {
+                                "type": "boolean",
+                                "description": "Only search in focused window (default: true)",
+                                "default": True,
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="click_ui_element",
+                    description="ACCESSIBILITY API: Click any UI element by its role and title. Use find_ui_elements first to discover elements.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "description": "Element role (e.g., 'AXButton', 'AXCheckBox', 'AXLink', 'AXMenuItem')",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Exact element title",
+                            },
+                            "title_contains": {
+                                "type": "string",
+                                "description": "Substring to match in title",
+                            },
+                            "in_focused_window": {
+                                "type": "boolean",
+                                "description": "Only search in focused window (default: true)",
+                                "default": True,
+                            },
+                        },
+                        "required": ["role"],
+                    },
+                ),
+                Tool(
+                    name="click_menu_item",
+                    description="ACCESSIBILITY API: Click a menu item by navigating the menu path. Provide the path from menu bar to the item.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "menu_path": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Path from menu bar to item. Example: ['File', 'Save As...'] or ['Edit', 'Find', 'Find...']",
+                            },
+                        },
+                        "required": ["menu_path"],
+                    },
+                ),
+                Tool(
+                    name="get_element_at_position",
+                    description="ACCESSIBILITY API: Get information about the UI element at a specific screen position. Useful for understanding what's under the cursor.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "x": {
+                                "type": "number",
+                                "description": "X coordinate",
+                            },
+                            "y": {
+                                "type": "number",
+                                "description": "Y coordinate",
+                            },
+                        },
+                        "required": ["x", "y"],
+                    },
+                ),
+                Tool(
+                    name="get_focused_window_info",
+                    description="ACCESSIBILITY API: Get information about the currently focused window and application.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="get_ui_tree",
+                    description="ACCESSIBILITY API: Get a hierarchical tree of UI elements. Useful for understanding the structure of a window.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "in_focused_window": {
+                                "type": "boolean",
+                                "description": "Only get elements in focused window (default: true)",
+                                "default": True,
+                            },
+                            "max_depth": {
+                                "type": "number",
+                                "description": "Maximum depth to traverse (default: 3, max: 10)",
+                                "default": 3,
+                            },
+                        },
+                        "required": [],
+                    },
+                ),
+                Tool(
+                    name="check_accessibility_permissions",
+                    description="Check if accessibility permissions are granted. Returns instructions for enabling if not.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                    },
+                ),
             ]
 
         @self.server.call_tool()
@@ -924,6 +1123,409 @@ After identifying the cell, respond with which cell to click and why."""
                                 f"Clicked sub-cell {sub_cell.upper()} within {parent_cell.upper()} "
                                 f"at pixel coordinates ({x}, {y}) with {button} button ({click_type})"
                             ),
+                        )
+                    ]
+
+                # Accessibility API Tools
+                elif name == "check_accessibility_permissions":
+                    if not ACCESSIBILITY_AVAILABLE:
+                        log("  Accessibility: pyobjc not installed", "WARN")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=(
+                                    "Accessibility API not available. "
+                                    "Install pyobjc packages: pip install pyobjc-framework-ApplicationServices pyobjc-framework-Quartz pyobjc-framework-Cocoa"
+                                ),
+                            )
+                        ]
+
+                    has_perms = self.accessibility.has_permissions() if self.accessibility else False
+                    if has_perms:
+                        log("  Accessibility: permissions granted", "INFO")
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility permissions are granted. All accessibility tools are available.",
+                            )
+                        ]
+                    else:
+                        log("  Accessibility: permissions NOT granted", "WARN")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=(
+                                    "Accessibility permissions NOT granted. To enable:\n"
+                                    "1. Open System Preferences (System Settings on macOS 13+)\n"
+                                    "2. Go to Privacy & Security > Accessibility\n"
+                                    "3. Add and enable the terminal/application running this MCP server\n"
+                                    "4. Restart the MCP server after granting permissions"
+                                ),
+                            )
+                        ]
+
+                elif name == "click_button":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    title = arguments.get("title")
+                    title_contains = arguments.get("title_contains")
+                    in_focused_window = arguments.get("in_focused_window", True)
+
+                    if not title and not title_contains:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Error: Must specify either 'title' (exact match) or 'title_contains' (substring match)",
+                            )
+                        ]
+
+                    result = self.accessibility.click_button(
+                        title=title,
+                        title_contains=title_contains,
+                        in_focused_window=in_focused_window,
+                    )
+
+                    if result["success"]:
+                        button_info = result.get("button", {})
+                        log(f"  Clicked button: {button_info.get('title', 'unknown')}", "INFO")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Successfully clicked button: '{button_info.get('title', 'unknown')}'",
+                            )
+                        ]
+                    else:
+                        log(f"  Button click failed: {result.get('error')}", "WARN")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Failed to click button: {result.get('error')}",
+                            )
+                        ]
+
+                elif name == "find_buttons":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    title_contains = arguments.get("title_contains")
+                    in_focused_window = arguments.get("in_focused_window", True)
+
+                    buttons = self.accessibility.find_buttons(
+                        title_contains=title_contains,
+                        in_focused_window=in_focused_window,
+                    )
+
+                    log(f"  Found {len(buttons)} buttons", "INFO")
+
+                    if not buttons:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="No buttons found in the current window.",
+                            )
+                        ]
+
+                    # Format buttons for display
+                    lines = [f"Found {len(buttons)} button(s):"]
+                    for i, btn in enumerate(buttons[:30], 1):  # Limit to 30
+                        title = btn.get("title") or "(no title)"
+                        enabled = "enabled" if btn.get("enabled", True) else "disabled"
+                        pos = btn.get("position", {})
+                        pos_str = f"at ({pos.get('x', '?')}, {pos.get('y', '?')})" if pos else ""
+                        lines.append(f"  {i}. \"{title}\" [{enabled}] {pos_str}")
+
+                    if len(buttons) > 30:
+                        lines.append(f"  ... and {len(buttons) - 30} more")
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text="\n".join(lines),
+                        )
+                    ]
+
+                elif name == "find_ui_elements":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    role = arguments.get("role")
+                    title = arguments.get("title")
+                    title_contains = arguments.get("title_contains")
+                    in_focused_window = arguments.get("in_focused_window", True)
+
+                    elements = self.accessibility.find_elements(
+                        role=role,
+                        title=title,
+                        title_contains=title_contains,
+                        in_focused_window=in_focused_window,
+                    )
+
+                    log(f"  Found {len(elements)} elements (role={role})", "INFO")
+
+                    if not elements:
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"No elements found matching criteria (role={role}, title={title or title_contains}).",
+                            )
+                        ]
+
+                    # Format elements for display
+                    lines = [f"Found {len(elements)} element(s):"]
+                    for i, elem in enumerate(elements[:30], 1):
+                        role_str = elem.get("role", "unknown")
+                        title_str = elem.get("title") or elem.get("description") or "(no title)"
+                        enabled = "enabled" if elem.get("enabled", True) else "disabled"
+                        pos = elem.get("position", {})
+                        pos_str = f"at ({pos.get('x', '?')}, {pos.get('y', '?')})" if pos else ""
+                        lines.append(f"  {i}. [{role_str}] \"{title_str}\" [{enabled}] {pos_str}")
+
+                    if len(elements) > 30:
+                        lines.append(f"  ... and {len(elements) - 30} more")
+
+                    return [
+                        TextContent(
+                            type="text",
+                            text="\n".join(lines),
+                        )
+                    ]
+
+                elif name == "click_ui_element":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    role = arguments["role"]
+                    title = arguments.get("title")
+                    title_contains = arguments.get("title_contains")
+                    in_focused_window = arguments.get("in_focused_window", True)
+
+                    result = self.accessibility.click_element(
+                        role=role,
+                        title=title,
+                        title_contains=title_contains,
+                        in_focused_window=in_focused_window,
+                    )
+
+                    if result["success"]:
+                        elem_info = result.get("element", {})
+                        log(f"  Clicked element: {elem_info.get('role')} - {elem_info.get('title')}", "INFO")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Successfully clicked {elem_info.get('role')}: '{elem_info.get('title', 'unknown')}'",
+                            )
+                        ]
+                    else:
+                        log(f"  Element click failed: {result.get('error')}", "WARN")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Failed to click element: {result.get('error')}",
+                            )
+                        ]
+
+                elif name == "click_menu_item":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    menu_path = arguments["menu_path"]
+                    if not menu_path or not isinstance(menu_path, list):
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Error: menu_path must be a non-empty list of menu titles",
+                            )
+                        ]
+
+                    result = self.accessibility.click_menu_item(menu_path)
+
+                    if result["success"]:
+                        log(f"  Clicked menu: {' > '.join(menu_path)}", "INFO")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Successfully clicked menu item: {' > '.join(menu_path)}",
+                            )
+                        ]
+                    else:
+                        log(f"  Menu click failed: {result.get('error')}", "WARN")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"Failed to click menu item: {result.get('error')}",
+                            )
+                        ]
+
+                elif name == "get_element_at_position":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    x = int(arguments["x"])
+                    y = int(arguments["y"])
+
+                    elem_info = self.accessibility.get_element_at_position(x, y)
+
+                    if elem_info:
+                        log(f"  Element at ({x}, {y}): {elem_info.get('role')}", "INFO")
+                        lines = [f"Element at ({x}, {y}):"]
+                        lines.append(f"  Role: {elem_info.get('role', 'unknown')}")
+                        if elem_info.get("title"):
+                            lines.append(f"  Title: {elem_info['title']}")
+                        if elem_info.get("description"):
+                            lines.append(f"  Description: {elem_info['description']}")
+                        if elem_info.get("value") is not None:
+                            lines.append(f"  Value: {elem_info['value']}")
+                        if elem_info.get("enabled") is not None:
+                            lines.append(f"  Enabled: {elem_info['enabled']}")
+                        if elem_info.get("position"):
+                            pos = elem_info["position"]
+                            lines.append(f"  Position: ({pos['x']}, {pos['y']})")
+                        if elem_info.get("size"):
+                            size = elem_info["size"]
+                            lines.append(f"  Size: {size['width']}x{size['height']}")
+
+                        return [
+                            TextContent(
+                                type="text",
+                                text="\n".join(lines),
+                            )
+                        ]
+                    else:
+                        log(f"  No element at ({x}, {y})", "INFO")
+                        return [
+                            TextContent(
+                                type="text",
+                                text=f"No UI element found at position ({x}, {y})",
+                            )
+                        ]
+
+                elif name == "get_focused_window_info":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    app_info = self.accessibility.get_focused_application()
+                    window_result = self.accessibility.get_focused_window()
+
+                    lines = ["Focused Application and Window:"]
+
+                    if app_info:
+                        lines.append(f"\nApplication:")
+                        lines.append(f"  Title: {app_info.get('title', 'unknown')}")
+                        if app_info.get("role"):
+                            lines.append(f"  Role: {app_info['role']}")
+
+                    if window_result:
+                        _, window_info = window_result
+                        lines.append(f"\nFocused Window:")
+                        lines.append(f"  Title: {window_info.get('title', 'unknown')}")
+                        if window_info.get("position"):
+                            pos = window_info["position"]
+                            lines.append(f"  Position: ({pos['x']}, {pos['y']})")
+                        if window_info.get("size"):
+                            size = window_info["size"]
+                            lines.append(f"  Size: {size['width']}x{size['height']}")
+                    else:
+                        lines.append("\nNo focused window found")
+
+                    log(f"  Focused: {app_info.get('title', 'unknown') if app_info else 'none'}", "INFO")
+                    return [
+                        TextContent(
+                            type="text",
+                            text="\n".join(lines),
+                        )
+                    ]
+
+                elif name == "get_ui_tree":
+                    if not self.accessibility:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="Accessibility API not available. Use check_accessibility_permissions for details.",
+                            )
+                        ]
+
+                    in_focused_window = arguments.get("in_focused_window", True)
+                    max_depth = min(int(arguments.get("max_depth", 3)), 10)
+
+                    tree = self.accessibility.get_ui_tree(
+                        in_focused_window=in_focused_window,
+                        max_depth=max_depth,
+                    )
+
+                    if not tree:
+                        return [
+                            TextContent(
+                                type="text",
+                                text="No UI tree available (no focused window or application)",
+                            )
+                        ]
+
+                    def format_tree(node: dict, indent: int = 0) -> List[str]:
+                        lines = []
+                        prefix = "  " * indent
+                        role = node.get("role", "unknown")
+                        title = node.get("title") or node.get("description") or ""
+
+                        # Format the node
+                        node_str = f"{prefix}[{role}]"
+                        if title:
+                            node_str += f' "{title}"'
+                        lines.append(node_str)
+
+                        # Recurse into children
+                        children = node.get("children", [])
+                        for child in children[:20]:  # Limit children per level
+                            lines.extend(format_tree(child, indent + 1))
+                        if len(children) > 20:
+                            lines.append(f"{prefix}  ... and {len(children) - 20} more children")
+
+                        return lines
+
+                    output_lines = ["UI Element Tree:"]
+                    for root in tree:
+                        output_lines.extend(format_tree(root))
+
+                    log(f"  UI tree: {len(tree)} root(s), depth={max_depth}", "INFO")
+                    return [
+                        TextContent(
+                            type="text",
+                            text="\n".join(output_lines[:200]),  # Limit output
                         )
                     ]
 
