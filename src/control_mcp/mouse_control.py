@@ -9,8 +9,11 @@ from typing import Tuple, Optional, Literal, List, Dict, Any
 from PIL import Image, ImageDraw, ImageFont
 
 # Configure pyautogui
-pyautogui.FAILSAFE = True  # Move mouse to corner to abort
+pyautogui.FAILSAFE = False  # Failsafe disabled
 pyautogui.PAUSE = 0.1  # Small delay between actions
+
+# Screen border margin - mouse cannot get closer than this to screen edges
+BORDER_MARGIN = 5  # pixels from screen edge
 
 
 def _cubic_bezier(t: float, p0: float, p1: float, p2: float, p3: float) -> float:
@@ -130,9 +133,26 @@ class MouseController:
         """Refresh stored screen dimensions from the system."""
         self.screen_width, self.screen_height = pyautogui.size()
 
+    def _clamp_to_border_margin(self, x: int, y: int) -> Tuple[int, int]:
+        """
+        Clamp coordinates to stay within the border margin.
+        Mouse cannot get closer than BORDER_MARGIN pixels to any screen edge.
+
+        Args:
+            x: X coordinate
+            y: Y coordinate
+
+        Returns:
+            Tuple of (clamped_x, clamped_y) coordinates
+        """
+        self._refresh_screen_size()
+        clamped_x = max(BORDER_MARGIN, min(x, self.screen_width - BORDER_MARGIN - 1))
+        clamped_y = max(BORDER_MARGIN, min(y, self.screen_height - BORDER_MARGIN - 1))
+        return (clamped_x, clamped_y)
+
     def validate_coordinates(self, x: int, y: int) -> bool:
         """
-        Check if coordinates are within screen bounds.
+        Check if coordinates are within allowed bounds (respecting border margin).
         Refreshes screen size before validation.
 
         Args:
@@ -140,10 +160,11 @@ class MouseController:
             y: Y coordinate
 
         Returns:
-            True if coordinates are valid, False otherwise
+            True if coordinates are valid (within border margin), False otherwise
         """
         self._refresh_screen_size()
-        return 0 <= x < self.screen_width and 0 <= y < self.screen_height
+        return (BORDER_MARGIN <= x < self.screen_width - BORDER_MARGIN and
+                BORDER_MARGIN <= y < self.screen_height - BORDER_MARGIN)
 
     def _calculate_duration(self, start_x: int, start_y: int, end_x: int, end_y: int) -> float:
         """
@@ -271,21 +292,16 @@ class MouseController:
         """
         Move the cursor to specified coordinates.
         Movement speed is automatically calculated based on distance.
+        Coordinates are automatically clamped to stay at least 5 pixels from screen edges.
 
         Args:
             x: X coordinate
             y: Y coordinate
             duration: Optional override for movement duration in seconds.
                      If not provided, duration is calculated based on distance.
-
-        Raises:
-            ValueError: If coordinates are outside screen bounds
         """
-        if not self.validate_coordinates(x, y):
-            raise ValueError(
-                f"Coordinates ({x}, {y}) are outside screen bounds "
-                f"(0-{self.screen_width}, 0-{self.screen_height})"
-            )
+        # Clamp coordinates to border margin
+        x, y = self._clamp_to_border_margin(x, y)
 
         # Calculate duration based on distance if not provided
         if duration is None:
@@ -307,6 +323,7 @@ class MouseController:
     ) -> None:
         """
         Perform mouse click(s) at specified or current position.
+        Coordinates are automatically clamped to stay at least 5 pixels from screen edges.
 
         Args:
             x: X coordinate (None for current position)
@@ -316,17 +333,14 @@ class MouseController:
             interval: Time between clicks in seconds
 
         Raises:
-            ValueError: If coordinates are outside screen bounds or button is invalid
+            ValueError: If button is invalid
         """
         if button not in ["left", "right", "middle"]:
             raise ValueError(f"Invalid button: {button}. Must be 'left', 'right', or 'middle'")
 
         if x is not None and y is not None:
-            if not self.validate_coordinates(x, y):
-                raise ValueError(
-                    f"Coordinates ({x}, {y}) are outside screen bounds "
-                    f"(0-{self.screen_width}, 0-{self.screen_height})"
-                )
+            # Clamp coordinates to border margin
+            x, y = self._clamp_to_border_margin(x, y)
             # Calculate duration based on distance
             current_x, current_y = pyautogui.position()
             duration = self._calculate_duration(current_x, current_y, x, y)
@@ -351,6 +365,7 @@ class MouseController:
     ) -> None:
         """
         Drag from one position to another.
+        Coordinates are automatically clamped to stay at least 5 pixels from screen edges.
 
         Args:
             from_x: Starting X coordinate
@@ -361,22 +376,14 @@ class MouseController:
             button: Mouse button to use for dragging
 
         Raises:
-            ValueError: If coordinates are outside screen bounds or button is invalid
+            ValueError: If button is invalid
         """
         if button not in ["left", "right", "middle"]:
             raise ValueError(f"Invalid button: {button}. Must be 'left', 'right', or 'middle'")
 
-        if not self.validate_coordinates(from_x, from_y):
-            raise ValueError(
-                f"Start coordinates ({from_x}, {from_y}) are outside screen bounds "
-                f"(0-{self.screen_width}, 0-{self.screen_height})"
-            )
-
-        if not self.validate_coordinates(to_x, to_y):
-            raise ValueError(
-                f"End coordinates ({to_x}, {to_y}) are outside screen bounds "
-                f"(0-{self.screen_width}, 0-{self.screen_height})"
-            )
+        # Clamp coordinates to border margin
+        from_x, from_y = self._clamp_to_border_margin(from_x, from_y)
+        to_x, to_y = self._clamp_to_border_margin(to_x, to_y)
 
         # Calculate duration for initial movement based on distance
         current_x, current_y = pyautogui.position()
@@ -398,21 +405,16 @@ class MouseController:
     ) -> None:
         """
         Scroll at the current or specified cursor position.
+        Coordinates are automatically clamped to stay at least 5 pixels from screen edges.
 
         Args:
             amount: Scroll amount (positive = up, negative = down)
             x: X coordinate to scroll at (None for current position)
             y: Y coordinate to scroll at (None for current position)
-
-        Raises:
-            ValueError: If coordinates are outside screen bounds
         """
         if x is not None and y is not None:
-            if not self.validate_coordinates(x, y):
-                raise ValueError(
-                    f"Coordinates ({x}, {y}) are outside screen bounds "
-                    f"(0-{self.screen_width}, 0-{self.screen_height})"
-                )
+            # Clamp coordinates to border margin
+            x, y = self._clamp_to_border_margin(x, y)
             # Calculate duration based on distance
             current_x, current_y = pyautogui.position()
             duration = self._calculate_duration(current_x, current_y, x, y)
@@ -458,10 +460,10 @@ class MouseController:
                 - image: Base64-encoded PNG with grid overlay
                 - rows: Number of rows
                 - cols: Number of columns
-                - cell_width: Width of each cell in pixels
-                - cell_height: Height of each cell in pixels
-                - screen_width: Total screen width
-                - screen_height: Total screen height
+                - cell_width: Width of each cell in pixels (logical screen coordinates)
+                - cell_height: Height of each cell in pixels (logical screen coordinates)
+                - screen_width: Total screen width (logical)
+                - screen_height: Total screen height (logical)
         """
         # Refresh screen size
         self._refresh_screen_size()
@@ -470,7 +472,14 @@ class MouseController:
         image = pyautogui.screenshot()
         draw = ImageDraw.Draw(image)
 
-        # Calculate cell dimensions
+        # Get actual image dimensions (may differ from logical screen size on Retina)
+        img_width, img_height = image.size
+
+        # Calculate cell dimensions for drawing on image (using actual image size)
+        img_cell_width = img_width / cols
+        img_cell_height = img_height / rows
+
+        # Calculate cell dimensions for clicking (using logical screen size)
         cell_width = self.screen_width / cols
         cell_height = self.screen_height / rows
 
@@ -479,31 +488,31 @@ class MouseController:
         label_color = (255, 255, 0)  # Yellow for labels
         label_bg_color = (0, 0, 0, 180)  # Semi-transparent black background
 
-        # Try to use a reasonable font size based on cell dimensions
-        font_size = max(10, min(int(cell_height / 4), int(cell_width / 4), 24))
+        # Try to use a reasonable font size based on cell dimensions (use image cell size)
+        font_size = max(10, min(int(img_cell_height / 4), int(img_cell_width / 4), 24))
         try:
             font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
         except Exception:
             font = ImageFont.load_default()
 
-        # Draw vertical lines and column labels
+        # Draw vertical lines and column labels (using image dimensions)
         for col in range(cols + 1):
-            x = int(col * cell_width)
-            draw.line([(x, 0), (x, self.screen_height)], fill=grid_color, width=2)
+            x = int(col * img_cell_width)
+            draw.line([(x, 0), (x, img_height)], fill=grid_color, width=2)
 
-        # Draw horizontal lines and row labels
+        # Draw horizontal lines and row labels (using image dimensions)
         for row in range(rows + 1):
-            y = int(row * cell_height)
-            draw.line([(0, y), (self.screen_width, y)], fill=grid_color, width=2)
+            y = int(row * img_cell_height)
+            draw.line([(0, y), (img_width, y)], fill=grid_color, width=2)
 
-        # Draw cell labels at the center of each cell
+        # Draw cell labels at the center of each cell (using image dimensions)
         for row in range(rows):
             for col in range(cols):
                 label = self._get_grid_label(row, col)
 
-                # Calculate label position (center of cell)
-                label_x = int(col * cell_width + cell_width / 2)
-                label_y = int(row * cell_height + cell_height / 2)
+                # Calculate label position (center of cell in image coordinates)
+                label_x = int(col * img_cell_width + img_cell_width / 2)
+                label_y = int(row * img_cell_height + img_cell_height / 2)
 
                 # Get text bounding box for centering
                 bbox = draw.textbbox((0, 0), label, font=font)
@@ -739,11 +748,11 @@ class MouseController:
         Returns:
             Dictionary containing:
                 - image: Base64-encoded PNG with sub-grid overlay
-                - cell_x, cell_y: Top-left corner of the cell
-                - cell_width, cell_height: Dimensions of the cell
-                - sub_cell_width, sub_cell_height: Dimensions of each sub-cell
+                - cell_x, cell_y: Top-left corner of the cell (logical screen coordinates)
+                - cell_width, cell_height: Dimensions of the cell (logical)
+                - sub_cell_width, sub_cell_height: Dimensions of each sub-cell (logical)
         """
-        # Get cell bounds
+        # Get cell bounds in logical screen coordinates
         cell_x, cell_y, cell_width, cell_height = self.get_cell_bounds(
             cell, parent_rows, parent_cols
         )
@@ -751,18 +760,29 @@ class MouseController:
         # Take full screenshot
         full_image = pyautogui.screenshot()
 
-        # Crop to the cell
+        # Calculate scale factor for Retina displays
+        img_width, img_height = full_image.size
+        scale_x = img_width / self.screen_width
+        scale_y = img_height / self.screen_height
+
+        # Calculate image coordinates for cropping (scaled for Retina)
+        img_cell_x = int(cell_x * scale_x)
+        img_cell_y = int(cell_y * scale_y)
+        img_cell_width = int(cell_width * scale_x)
+        img_cell_height = int(cell_height * scale_y)
+
+        # Crop to the cell using image coordinates
         cell_image = full_image.crop((
-            cell_x,
-            cell_y,
-            cell_x + cell_width,
-            cell_y + cell_height
+            img_cell_x,
+            img_cell_y,
+            img_cell_x + img_cell_width,
+            img_cell_y + img_cell_height
         ))
 
         # Scale up the cropped image for better visibility
-        scale_factor = 3
-        scaled_width = cell_width * scale_factor
-        scaled_height = cell_height * scale_factor
+        display_scale_factor = 3
+        scaled_width = img_cell_width * display_scale_factor
+        scaled_height = img_cell_height * display_scale_factor
         cell_image = cell_image.resize(
             (scaled_width, scaled_height),
             Image.Resampling.LANCZOS
