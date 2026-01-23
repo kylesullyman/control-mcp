@@ -1,2 +1,0 @@
-[console_scripts]
-control-mcp = control_mcp.server:main
