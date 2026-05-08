@@ -6,7 +6,7 @@ import io
 import time
 import random
 from typing import Tuple, Optional, Literal, List, Dict, Any
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageGrab
 
 # Configure pyautogui
 pyautogui.FAILSAFE = False  # Failsafe disabled
@@ -432,7 +432,7 @@ class MouseController:
         Returns:
             Base64-encoded PNG image as a string
         """
-        image = pyautogui.screenshot()
+        image = ImageGrab.grab()
 
         # Convert image to base64-encoded PNG
         buffer = io.BytesIO()
@@ -469,7 +469,7 @@ class MouseController:
         self._refresh_screen_size()
 
         # Take screenshot
-        image = pyautogui.screenshot()
+        image = ImageGrab.grab()
         draw = ImageDraw.Draw(image)
 
         # Get actual image dimensions (may differ from logical screen size on Retina)
@@ -758,7 +758,7 @@ class MouseController:
         )
 
         # Take full screenshot
-        full_image = pyautogui.screenshot()
+        full_image = ImageGrab.grab()
 
         # Calculate scale factor for Retina displays
         img_width, img_height = full_image.size
